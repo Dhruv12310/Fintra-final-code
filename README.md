@@ -34,12 +34,13 @@ App: **http://localhost:3000**
 
 ### Database
 
-Apply schema in Supabase (SQL Editor or `psql`):
+**For this branch, the canonical schema is `newschema.sql`** — merged schema with COA, banking, AR/AP, reconciliation, period close, and fixed triggers. Apply in Supabase SQL Editor or via `psql`:
 
-- Root: `supabase_schema.sql`
-- Then: `migrations/002_extend_companies_metadata.sql`, `migrations/003_add_website_field.sql`
+```bash
+psql $DATABASE_URL -f newschema.sql
+```
 
-See **MIGRATION_GUIDE.md** for full migration steps.
+Alternatively: `supabase_schema.sql` plus `migrations/002_*`, `migrations/003_*`. See **MIGRATION_GUIDE.md** for full migration steps.
 
 ---
 
@@ -64,7 +65,8 @@ endless/
 ├── requirements.txt       # Dev dependencies
 ├── requirements.production.txt
 ├── .env.example            # Backend env template
-├── supabase_schema.sql     # Main DB schema
+├── newschema.sql           # Canonical merged schema (this branch) — COA, banking, AR/AP, reconciliation, triggers
+├── supabase_schema.sql     # Legacy / alternate schema
 ├── migrations/             # Optional schema patches
 ├── routes/
 │   ├── users.py           # /users
@@ -206,7 +208,8 @@ See **DEPLOYMENT_GUIDE.md** / **VERCEL_DEPLOYMENT.md** if present.
 ## Documentation
 
 - **MIGRATION_GUIDE.md** — Database migration steps  
-- **supabase_schema.sql** — Full schema  
+- **newschema.sql** — Canonical merged schema for this branch (use this)  
+- **supabase_schema.sql** — Legacy full schema  
 - **API docs** — http://localhost:8000/docs (when backend is running)
 
 ---
