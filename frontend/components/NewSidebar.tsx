@@ -37,8 +37,8 @@ const navigation = [
   { name: 'Bills', href: '/bills', icon: Receipt },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { name: 'Month-end', href: '/month-end', icon: CalendarCheck },
-  { name: 'Ask AI', href: '/ai', icon: Sparkles },
   { name: 'Profile', href: '/profile', icon: User },
+  { name: 'Ask AI', href: '/ai', icon: Sparkles },
   { name: 'Company', href: '/company', icon: Globe }
 ]
 

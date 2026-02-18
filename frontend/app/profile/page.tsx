@@ -25,7 +25,7 @@ import { api } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
 export default function Profile() {
-  const { user, company, signOut, refreshUser, loading: authLoading } = useAuth()
+  const { user, supabaseUser, company, signOut, refreshUser, loading: authLoading } = useAuth()
   const router = useRouter()
   const [activeTab, setActiveTab] = useState<'personal' | 'company'>('personal')
   const [loading, setLoading] = useState(false)
@@ -69,7 +69,7 @@ export default function Profile() {
   })
 
   useEffect(() => {
-    if (!authLoading && !user) {
+    if (!authLoading && !supabaseUser) {
       router.push('/login')
       return
     }

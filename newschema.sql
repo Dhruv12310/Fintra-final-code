@@ -162,6 +162,21 @@ CREATE TABLE IF NOT EXISTS companies (
   onboarding_step TEXT,                     -- optional: 'company','coa_template','core_accounts','settings','done'
   coa_template_id UUID,                     -- optional pointer to template used (see table below)
 
+  -- onboarding profile fields:
+  website TEXT,
+  location_city TEXT,
+  location_state TEXT,
+  location_country TEXT DEFAULT 'USA',
+  location_zip TEXT,
+  business_type TEXT,
+  founded_year INTEGER,
+  employee_count INTEGER,
+  annual_revenue NUMERIC DEFAULT 0,
+  growth_stage TEXT,
+  target_market TEXT,
+  primary_products TEXT[],
+  competitors TEXT[],
+
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -1206,7 +1221,10 @@ CREATE POLICY company_isolation_policy ON companies
 FOR ALL USING (id IN (SELECT company_id FROM users WHERE id = auth.uid()));
 
 CREATE POLICY company_isolation_policy ON users
-FOR ALL USING (company_id IN (SELECT company_id FROM users WHERE id = auth.uid()));
+FOR ALL USING (
+  id = auth.uid()
+  OR company_id IN (SELECT company_id FROM users WHERE id = auth.uid())
+);
 
 CREATE POLICY company_isolation_policy ON accounts
 FOR ALL USING (company_id IN (SELECT company_id FROM users WHERE id = auth.uid()));
