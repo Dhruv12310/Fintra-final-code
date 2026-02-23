@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, List
 from database import supabase
 from middleware.auth import get_current_user_company
+from routes.journal_helpers import create_auto_journal_entry, get_ar_account
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
 
@@ -128,7 +129,7 @@ async def update_invoice(
     body: InvoiceUpdate,
     auth: Dict[str, str] = Depends(get_current_user_company),
 ):
-    """Update invoice (e.g. status to sent/posted)."""
+    """Update invoice (e.g. status to sent/posted). Auto-creates journal entry when posted."""
     cid = auth["company_id"]
     data = body.dict(exclude_none=True)
     if not data:
@@ -136,4 +137,64 @@ async def update_invoice(
     r = supabase.table("invoices").update(data).eq("id", invoice_id).eq("company_id", cid).execute()
     if not r.data:
         raise HTTPException(status_code=404, detail="Invoice not found")
-    return r.data[0]
+    invoice = r.data[0]
+
+    # Auto-journal when status changes to 'posted'
+    if data.get("status") == "posted" and not invoice.get("linked_journal_entry_id"):
+        # Fetch invoice with lines
+        inv_full = supabase.table("invoices")\
+            .select("*, invoice_lines(*)")\
+            .eq("id", invoice_id)\
+            .eq("company_id", cid)\
+            .single()\
+            .execute()
+        inv = inv_full.data
+        lines = inv.get("invoice_lines", [])
+
+        # Validate all lines have revenue_account_id
+        for line in lines:
+            if not line.get("revenue_account_id"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invoice line {line.get('line_number', '?')} is missing a revenue account. Assign revenue accounts before posting.",
+                )
+
+        ar_account_id = get_ar_account(cid)
+        total = inv.get("total", 0) or 0
+
+        # Build journal lines: DR Accounts Receivable, CR Revenue per line
+        journal_lines = [
+            {
+                "account_id": ar_account_id,
+                "debit": total,
+                "credit": 0,
+                "description": f"AR for {inv.get('invoice_number', '')}",
+                "contact_id": inv.get("customer_id"),
+            }
+        ]
+        for line in lines:
+            journal_lines.append({
+                "account_id": line["revenue_account_id"],
+                "debit": 0,
+                "credit": line.get("amount", 0) or 0,
+                "description": line.get("description") or f"Revenue - {inv.get('invoice_number', '')}",
+                "contact_id": inv.get("customer_id"),
+            })
+
+        je = create_auto_journal_entry(
+            company_id=cid,
+            entry_date=inv.get("invoice_date"),
+            memo=f"Invoice {inv.get('invoice_number', '')} posted",
+            reference=inv.get("invoice_number", ""),
+            source="invoice",
+            lines=journal_lines,
+        )
+
+        # Link journal entry to invoice
+        supabase.table("invoices")\
+            .update({"linked_journal_entry_id": je["id"]})\
+            .eq("id", invoice_id)\
+            .execute()
+        invoice["linked_journal_entry_id"] = je["id"]
+
+    return invoice

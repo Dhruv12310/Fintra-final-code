@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, List
 from database import supabase
 from middleware.auth import get_current_user_company
+from routes.journal_helpers import create_auto_journal_entry, get_ar_account
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -84,4 +85,43 @@ async def apply_to_invoice(
         "balance_due": max(0, new_balance),
         "status": "paid" if new_balance <= 0 else inv.get("status"),
     }).eq("id", body.invoice_id).execute()
-    return {"payment_id": payment_id, "invoice_id": body.invoice_id, "amount_applied": body.amount_applied}
+
+    # Auto-journal: DR Cash/Bank, CR Accounts Receivable
+    payment = pay_r.data
+    if not payment.get("deposit_account_id"):
+        raise HTTPException(
+            status_code=400,
+            detail="Payment is missing deposit_account_id. Set a deposit account before applying.",
+        )
+    ar_account_id = get_ar_account(cid)
+    je = create_auto_journal_entry(
+        company_id=cid,
+        entry_date=payment.get("payment_date"),
+        memo=f"Payment applied to invoice {inv.get('invoice_number', body.invoice_id)}",
+        reference=inv.get("invoice_number", ""),
+        source="payment",
+        lines=[
+            {
+                "account_id": payment["deposit_account_id"],
+                "debit": body.amount_applied,
+                "credit": 0,
+                "description": f"Payment received - {inv.get('invoice_number', '')}",
+                "contact_id": payment.get("customer_id"),
+            },
+            {
+                "account_id": ar_account_id,
+                "debit": 0,
+                "credit": body.amount_applied,
+                "description": f"AR reduced - {inv.get('invoice_number', '')}",
+                "contact_id": payment.get("customer_id"),
+            },
+        ],
+    )
+
+    # Link journal entry to payment
+    supabase.table("payments")\
+        .update({"linked_journal_entry_id": je["id"]})\
+        .eq("id", payment_id)\
+        .execute()
+
+    return {"payment_id": payment_id, "invoice_id": body.invoice_id, "amount_applied": body.amount_applied, "journal_entry_id": je["id"]}

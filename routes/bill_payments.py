@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, List
 from database import supabase
 from middleware.auth import get_current_user_company
+from routes.journal_helpers import create_auto_journal_entry, get_ap_account
 
 router = APIRouter(prefix="/bill-payments", tags=["Bill Payments"])
 
@@ -66,6 +67,14 @@ async def apply_to_bills(
     pay_r = supabase.table("bill_payments").select("*").eq("id", payment_id).eq("company_id", cid).single().execute()
     if not pay_r.data:
         raise HTTPException(status_code=404, detail="Bill payment not found")
+    payment = pay_r.data
+    if not payment.get("payment_account_id"):
+        raise HTTPException(
+            status_code=400,
+            detail="Bill payment is missing payment_account_id. Set a payment account before applying.",
+        )
+
+    total_applied = 0
     for line in body:
         bill_r = supabase.table("bills").select("*").eq("id", line.bill_id).eq("company_id", cid).single().execute()
         if not bill_r.data:
@@ -83,4 +92,38 @@ async def apply_to_bills(
             "balance_due": max(0, new_balance),
             "status": "paid" if new_balance <= 0 else bill.get("status"),
         }).eq("id", line.bill_id).execute()
-    return {"payment_id": payment_id, "applied": len(body)}
+        total_applied += line.amount_applied
+
+    # Auto-journal: DR Accounts Payable, CR Cash/Bank
+    ap_account_id = get_ap_account(cid)
+    je = create_auto_journal_entry(
+        company_id=cid,
+        entry_date=payment.get("payment_date"),
+        memo=f"Bill payment applied",
+        reference="",
+        source="payment",
+        lines=[
+            {
+                "account_id": ap_account_id,
+                "debit": total_applied,
+                "credit": 0,
+                "description": "AP reduced - bill payment",
+                "contact_id": payment.get("vendor_id"),
+            },
+            {
+                "account_id": payment["payment_account_id"],
+                "debit": 0,
+                "credit": total_applied,
+                "description": "Cash paid - bill payment",
+                "contact_id": payment.get("vendor_id"),
+            },
+        ],
+    )
+
+    # Link journal entry to bill payment
+    supabase.table("bill_payments")\
+        .update({"linked_journal_entry_id": je["id"]})\
+        .eq("id", payment_id)\
+        .execute()
+
+    return {"payment_id": payment_id, "applied": len(body), "journal_entry_id": je["id"]}

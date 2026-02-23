@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, List
 from database import supabase
 from middleware.auth import get_current_user_company
+from routes.journal_helpers import create_auto_journal_entry, get_ap_account
 
 router = APIRouter(prefix="/bills", tags=["Bills"])
 
@@ -114,7 +115,7 @@ async def update_bill(
     body: dict,
     auth: Dict[str, str] = Depends(get_current_user_company),
 ):
-    """Update bill (e.g. status to posted)."""
+    """Update bill (e.g. status to posted). Auto-creates journal entry when posted."""
     cid = auth["company_id"]
     allowed = {"status", "memo"}
     data = {k: v for k, v in body.items() if k in allowed and v is not None}
@@ -123,4 +124,63 @@ async def update_bill(
     r = supabase.table("bills").update(data).eq("id", bill_id).eq("company_id", cid).execute()
     if not r.data:
         raise HTTPException(status_code=404, detail="Bill not found")
-    return r.data[0]
+    bill = r.data[0]
+
+    # Auto-journal when status changes to 'posted'
+    if data.get("status") == "posted" and not bill.get("linked_journal_entry_id"):
+        # Fetch bill with lines
+        bill_full = supabase.table("bills")\
+            .select("*, bill_lines(*)")\
+            .eq("id", bill_id)\
+            .eq("company_id", cid)\
+            .single()\
+            .execute()
+        b = bill_full.data
+        lines = b.get("bill_lines", [])
+
+        # Validate all lines have expense_account_id
+        for line in lines:
+            if not line.get("expense_account_id"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Bill line {line.get('line_number', '?')} is missing an expense account. Assign expense accounts before posting.",
+                )
+
+        ap_account_id = get_ap_account(cid)
+        total = b.get("total", 0) or 0
+
+        # Build journal lines: DR Expense per line, CR Accounts Payable
+        journal_lines = []
+        for line in lines:
+            journal_lines.append({
+                "account_id": line["expense_account_id"],
+                "debit": line.get("amount", 0) or 0,
+                "credit": 0,
+                "description": line.get("description") or f"Expense - {b.get('bill_number', '')}",
+                "contact_id": b.get("vendor_id"),
+            })
+        journal_lines.append({
+            "account_id": ap_account_id,
+            "debit": 0,
+            "credit": total,
+            "description": f"AP for {b.get('bill_number', '')}",
+            "contact_id": b.get("vendor_id"),
+        })
+
+        je = create_auto_journal_entry(
+            company_id=cid,
+            entry_date=b.get("bill_date"),
+            memo=f"Bill {b.get('bill_number', '')} posted",
+            reference=b.get("bill_number", ""),
+            source="bill",
+            lines=journal_lines,
+        )
+
+        # Link journal entry to bill
+        supabase.table("bills")\
+            .update({"linked_journal_entry_id": je["id"]})\
+            .eq("id", bill_id)\
+            .execute()
+        bill["linked_journal_entry_id"] = je["id"]
+
+    return bill

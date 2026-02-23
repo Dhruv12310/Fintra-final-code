@@ -10,7 +10,8 @@ import {
   Camera,
   FileText,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  Trash2
 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
@@ -271,6 +272,22 @@ export default function NewJournals() {
       })
     } finally {
       setSaving(false)
+    }
+  }
+
+  const deleteJournalEntry = async (journalId: string) => {
+    if (!companyId) return
+    if (!confirm('Delete this journal entry? This will reverse the account balances.')) return
+    try {
+      await api.delete(`/journals/${journalId}`)
+      setToast({ type: 'success', message: 'Journal entry deleted.' })
+      fetchRecentJournals(companyId)
+    } catch (error: any) {
+      const detail = error?.response?.data?.detail
+      setToast({
+        type: 'error',
+        message: typeof detail === 'string' ? detail : 'Failed to delete journal entry.',
+      })
     }
   }
 
@@ -548,17 +565,26 @@ export default function NewJournals() {
                     <p className="text-lg font-semibold text-gray-900 dark:text-white">{journal.journal_number || 'Pending #'}</p>
                     <p className="text-sm text-gray-600 dark:text-white/60 mt-1">{journal.memo || 'No memo provided'}</p>
                   </div>
-                  <div className="text-right">
-                    <p className="text-xl font-semibold text-gray-900 dark:text-white">${journal.total_debit?.toLocaleString() || '0.00'}</p>
-                    <span
-                      className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
-                        journal.status === 'posted'
-                          ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-200'
-                          : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-white/70'
-                      }`}
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="text-xl font-semibold text-gray-900 dark:text-white">${journal.total_debit?.toLocaleString() || '0.00'}</p>
+                      <span
+                        className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${
+                          journal.status === 'posted'
+                            ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-200'
+                            : 'bg-gray-100 dark:bg-white/10 text-gray-700 dark:text-white/70'
+                        }`}
+                      >
+                        {journal.status || 'draft'}
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => deleteJournalEntry(journal.id)}
+                      className="p-2 rounded-xl text-gray-400 dark:text-white/30 hover:text-rose-500 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition"
+                      title="Delete entry"
                     >
-                      {journal.status || 'draft'}
-                    </span>
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
                 {journal.journal_lines && journal.journal_lines.length > 0 && (

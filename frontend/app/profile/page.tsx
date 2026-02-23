@@ -167,10 +167,10 @@ export default function Profile() {
         competitors: companyInfo.competitors,
 
         // Legacy fields
-        email: companyInfo.email,
-        phone: companyInfo.phone,
-        tax_id: companyInfo.taxId,
-        fiscal_year_end: companyInfo.fiscalYearEnd
+        email: companyInfo.email || null,
+        phone: companyInfo.phone || null,
+        tax_id: companyInfo.taxId || null,
+        fiscal_year_end: companyInfo.fiscalYearEnd || null
       })
       await refreshUser()
       alert('Company information saved!')

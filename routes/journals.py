@@ -4,6 +4,7 @@ from typing import List, Optional, Dict
 from database import supabase
 from datetime import datetime
 from middleware.auth import get_current_user_company
+from routes.journal_helpers import create_auto_journal_entry
 
 router = APIRouter()
 
@@ -81,93 +82,31 @@ def get_journal_entry(journal_id: str, auth: Dict[str, str] = Depends(get_curren
 def create_journal_entry(entry: JournalEntryCreate, auth: Dict[str, str] = Depends(get_current_user_company)):
     """Create a new journal entry with lines"""
     try:
-        company_id = auth["company_id"]  # Use authenticated company_id
+        company_id = auth["company_id"]
 
-        # Validate that debits equal credits
-        total_debit = sum(line.debit or 0 for line in entry.lines)
-        total_credit = sum(line.credit or 0 for line in entry.lines)
-
-        if abs(total_debit - total_credit) > 0.01:  # Allow for small floating point differences
-            raise HTTPException(
-                status_code=400,
-                detail=f"Debits ({total_debit}) must equal credits ({total_credit})"
-            )
-
-        # Generate journal number
-        # Get the count of journal entries for this company to generate the next number
-        year = datetime.strptime(entry.entry_date, "%Y-%m-%d").year
-        count_response = supabase.table("journal_entries")\
-            .select("id", count="exact")\
-            .eq("company_id", company_id)\
-            .execute()
-
-        next_number = (count_response.count or 0) + 1
-        journal_number = f"JE-{year}-{next_number:04d}"
-
-        # Create journal entry (reference_number, source per newschema; is_balanced from DB)
         source = (entry.source or "manual").lower()
         if source not in ("manual", "ocr", "import", "system", "bank", "invoice", "bill", "payment", "adjustment"):
             source = "manual"
-        journal_data = {
-            "company_id": company_id,
-            "journal_number": journal_number,
-            "entry_date": entry.entry_date,
-            "memo": entry.memo,
-            "reference_number": entry.reference,
-            "source": source,
-            "status": "posted",
-            "total_debit": total_debit,
-            "total_credit": total_credit
-        }
 
-        journal_response = supabase.table("journal_entries")\
-            .insert(journal_data)\
-            .execute()
-
-        if not journal_response.data:
-            raise HTTPException(status_code=400, detail="Failed to create journal entry")
-
-        journal_entry = journal_response.data[0]
-
-        # Create journal lines
-        for idx, line in enumerate(entry.lines, start=1):
-            line_data = {
-                "journal_entry_id": journal_entry["id"],
+        lines = [
+            {
                 "account_id": line.account_id,
-                "line_number": idx,
                 "debit": line.debit or 0.0,
                 "credit": line.credit or 0.0,
                 "description": line.description,
                 "contact_id": line.contact_id,
-                "tags": line.tags
             }
+            for line in entry.lines
+        ]
 
-            supabase.table("journal_lines").insert(line_data).execute()
-
-            # Update account balance
-            account_response = supabase.table("accounts")\
-                .select("current_balance, account_type")\
-                .eq("id", line.account_id)\
-                .single()\
-                .execute()
-
-            if account_response.data:
-                account = account_response.data
-                current_balance = account.get("current_balance", 0) or 0
-                account_type = account.get("account_type", "")
-
-                # Calculate new balance based on account type
-                # Debit increases: Assets, Expenses
-                # Credit increases: Liabilities, Equity, Revenue
-                if account_type in ["asset", "expense"]:
-                    new_balance = current_balance + (line.debit or 0) - (line.credit or 0)
-                else:  # liability, equity, revenue
-                    new_balance = current_balance + (line.credit or 0) - (line.debit or 0)
-
-                supabase.table("accounts")\
-                    .update({"current_balance": new_balance})\
-                    .eq("id", line.account_id)\
-                    .execute()
+        journal_entry = create_auto_journal_entry(
+            company_id=company_id,
+            entry_date=entry.entry_date,
+            memo=entry.memo,
+            reference=entry.reference,
+            source=source,
+            lines=lines,
+        )
 
         # Fetch the complete entry with lines (same shape as GET /journals/{id})
         full = supabase.table("journal_entries")\
@@ -240,7 +179,13 @@ def delete_journal_entry(journal_id: str, auth: Dict[str, str] = Depends(get_cur
                 .eq("id", line["account_id"])\
                 .execute()
 
-    # Delete journal lines first
+    # Set status to draft first (DB trigger blocks line changes on posted entries)
+    supabase.table("journal_entries")\
+        .update({"status": "draft"})\
+        .eq("id", journal_id)\
+        .execute()
+
+    # Delete journal lines
     supabase.table("journal_lines")\
         .delete()\
         .eq("journal_entry_id", journal_id)\

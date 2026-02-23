@@ -118,6 +118,12 @@ async def update_company(
         if not user_company_id or (company_still_in_onboarding and user_company_id != company_id):
             supabase.table("users").update({"company_id": company_id}).eq("id", user_id).execute()
 
+        # Auto-provision Chart of Accounts when onboarding completes
+        if update_data.get("onboarding_completed") is True and company_still_in_onboarding:
+            from routes.coa_templates import provision_coa_for_company
+            industry = response.data[0].get("industry", "") if response.data else ""
+            provision_coa_for_company(company_id, industry)
+
         return {"status": "success", "data": response.data}
     except HTTPException:
         raise
