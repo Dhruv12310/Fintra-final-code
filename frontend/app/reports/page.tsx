@@ -46,6 +46,36 @@ function janFirstStr() {
   return `${y}-01-01`
 }
 
+type Preset = { label: string; range?: [string, string]; asOf?: string }
+
+function getPresets(): Preset[] {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth()
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const ymd = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+
+  const firstOfMonth = new Date(y, m, 1)
+  const lastOfMonth = new Date(y, m + 1, 0)
+  const firstOfLastMonth = new Date(y, m - 1, 1)
+  const lastOfLastMonth = new Date(y, m, 0)
+
+  const quarterStart = new Date(y, Math.floor(m / 3) * 3, 1)
+  const quarterEnd = new Date(y, Math.floor(m / 3) * 3 + 3, 0)
+  const lastQStart = new Date(y, Math.floor(m / 3) * 3 - 3, 1)
+  const lastQEnd = new Date(y, Math.floor(m / 3) * 3, 0)
+
+  return [
+    { label: 'This Month', range: [ymd(firstOfMonth), ymd(lastOfMonth)], asOf: ymd(lastOfMonth) },
+    { label: 'Last Month', range: [ymd(firstOfLastMonth), ymd(lastOfLastMonth)], asOf: ymd(lastOfLastMonth) },
+    { label: 'This Quarter', range: [ymd(quarterStart), ymd(quarterEnd)], asOf: ymd(quarterEnd) },
+    { label: 'Last Quarter', range: [ymd(lastQStart), ymd(lastQEnd)], asOf: ymd(lastQEnd) },
+    { label: 'YTD', range: [`${y}-01-01`, ymd(now)], asOf: ymd(now) },
+    { label: 'Last Year', range: [`${y - 1}-01-01`, `${y - 1}-12-31`], asOf: `${y - 1}-12-31` },
+  ]
+}
+
 function formatDateDisplay(d: string) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
@@ -62,7 +92,8 @@ function Section({ title, children, level = 1 }: { title: string; children: Reac
     <div className={screenPl} data-report-level={level}>
       <button
         onClick={() => setOpen(!open)}
-        className={`rpt-section-title flex items-center gap-1 w-full text-left py-1.5 ${font} text-neutral-900 dark:text-white hover:text-fuchsia-600 dark:hover:text-fuchsia-400 transition-colors`}
+        className={`rpt-section-title flex items-center gap-1 w-full text-left py-1.5 ${font} transition-colors`}
+        style={{ color: 'var(--text-primary)' }}
         data-report-level={level}
       >
         <span className="rpt-chevron">{open ? <ChevronDown className="h-4 w-4 shrink-0" /> : <ChevronRight className="h-4 w-4 shrink-0" />}</span>
@@ -76,9 +107,9 @@ function Section({ title, children, level = 1 }: { title: string; children: Reac
 function AccountRow({ code, name, amount, indent = 3 }: { code: string; name: string; amount: number; indent?: number }) {
   const screenPl = indent === 2 ? 'pl-8' : indent === 3 ? 'pl-12' : 'pl-4'
   return (
-    <div className={`rpt-account-row flex justify-between py-0.5 text-sm ${screenPl} text-neutral-700 dark:text-neutral-300`}>
+    <div className={`rpt-account-row flex justify-between py-0.5 text-sm ${screenPl}`} style={{ color: 'var(--text-secondary)' }}>
       <span>{code ? `${code} \u2013 ${name}` : name}</span>
-      <span className={amount < 0 ? 'text-red-600 dark:text-red-400' : ''}>{fmt(amount)}</span>
+      <span style={amount < 0 ? { color: 'var(--neon-red, #f87171)' } : {}}>{fmt(amount)}</span>
     </div>
   )
 }
@@ -89,16 +120,22 @@ function TotalRow({ label, amount, bold = false, doubleBorder = false, indent = 
   const screenPl = indent === 1 ? 'pl-4' : indent === 2 ? 'pl-8' : ''
   const rptClass = doubleBorder ? 'rpt-total-grand' : bold ? 'rpt-total-section' : 'rpt-total-cat'
   return (
-    <div className={`${rptClass} flex justify-between py-1 ${screenPl} ${bold ? 'font-bold' : 'font-semibold'} text-sm text-neutral-900 dark:text-white ${doubleBorder ? 'border-t-2 border-double border-neutral-400 dark:border-neutral-500 mt-1 pt-2' : 'border-t border-neutral-200 dark:border-neutral-700'}`}>
+    <div
+      className={`${rptClass} flex justify-between py-1 ${screenPl} ${bold ? 'font-bold' : 'font-semibold'} text-sm ${doubleBorder ? 'mt-1 pt-2' : ''}`}
+      style={{
+        color: 'var(--text-primary)',
+        borderTop: doubleBorder ? '2px double var(--border-color)' : '1px solid var(--border-color)',
+      }}
+    >
       <span>{label}</span>
-      <span className={amount < 0 ? 'text-red-600 dark:text-red-400' : ''}>{fmt(amount)}</span>
+      <span style={amount < 0 ? { color: '#f87171' } : {}}>{fmt(amount)}</span>
     </div>
   )
 }
 
 function EmptyState() {
   return (
-    <div className="flex flex-col items-center justify-center py-16 text-neutral-500 dark:text-neutral-400">
+    <div className="flex flex-col items-center justify-center py-16" style={{ color: 'var(--text-muted)' }}>
       <BarChart3 className="h-12 w-12 mb-3 opacity-40" />
       <p className="text-sm">No posted transactions for this period</p>
     </div>
@@ -176,7 +213,7 @@ function CashFlowReport({ data }: { data: any }) {
         <AccountRow code="" name="Net Income" amount={s.operating?.net_income || 0} indent={2} />
         {s.operating?.adjustments?.length > 0 && (
           <div className="pl-4">
-            <p className="rpt-adj-label text-xs font-medium text-neutral-500 dark:text-neutral-400 pl-4 pt-1">Adjustments for changes in working capital:</p>
+            <p className="rpt-adj-label text-xs font-medium pl-4 pt-1" style={{ color: 'var(--text-muted)' }}>Adjustments for changes in working capital:</p>
             {s.operating.adjustments.map((a: any, i: number) => (
               <AccountRow key={i} code={a.account_code} name={a.account_name} amount={a.amount} indent={3} />
             ))}
@@ -190,7 +227,7 @@ function CashFlowReport({ data }: { data: any }) {
           <AccountRow key={i} code={a.account_code} name={a.account_name} amount={a.amount} indent={2} />
         ))}
         {(!s.investing?.items || s.investing.items.length === 0) && (
-          <p className="rpt-empty-note text-xs text-neutral-400 pl-8 py-1">No investing activity</p>
+          <p className="rpt-empty-note text-xs pl-8 py-1" style={{ color: 'var(--text-muted)' }}>No investing activity</p>
         )}
         <TotalRow label="Net Cash from Investing Activities" amount={s.investing?.total || 0} indent={1} />
       </Section>
@@ -200,13 +237,13 @@ function CashFlowReport({ data }: { data: any }) {
           <AccountRow key={i} code={a.account_code} name={a.account_name} amount={a.amount} indent={2} />
         ))}
         {(!s.financing?.items || s.financing.items.length === 0) && (
-          <p className="rpt-empty-note text-xs text-neutral-400 pl-8 py-1">No financing activity</p>
+          <p className="rpt-empty-note text-xs pl-8 py-1" style={{ color: 'var(--text-muted)' }}>No financing activity</p>
         )}
         <TotalRow label="Net Cash from Financing Activities" amount={s.financing?.total || 0} indent={1} />
       </Section>
 
       <TotalRow label="Net Change in Cash" amount={s.net_change_in_cash || 0} bold />
-      <div className="rpt-account-row flex justify-between py-0.5 text-sm text-neutral-700 dark:text-neutral-300">
+      <div className="rpt-account-row flex justify-between py-0.5 text-sm" style={{ color: 'var(--text-secondary)' }}>
         <span>Beginning Cash</span>
         <span>{fmt(s.beginning_cash || 0)}</span>
       </div>
@@ -219,21 +256,21 @@ function TrialBalanceReport({ data }: { data: any }) {
   if (!data?.accounts || data.accounts.length === 0) return <EmptyState />
   return (
     <div className="rpt-body">
-      <div className="rpt-tb-header grid grid-cols-4 gap-2 text-xs font-semibold text-neutral-500 dark:text-neutral-400 border-b border-neutral-300 dark:border-neutral-600 pb-1 mb-1">
+      <div className="rpt-tb-header grid grid-cols-4 gap-2 text-xs font-semibold pb-1 mb-1" style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
         <span>Account Code</span>
         <span>Account Name</span>
         <span className="text-right">Debit</span>
         <span className="text-right">Credit</span>
       </div>
       {data.accounts.map((a: any, i: number) => (
-        <div key={i} className="rpt-tb-row grid grid-cols-4 gap-2 text-sm py-0.5 text-neutral-700 dark:text-neutral-300">
+        <div key={i} className="rpt-tb-row grid grid-cols-4 gap-2 text-sm py-0.5" style={{ color: 'var(--text-secondary)' }}>
           <span className="font-mono">{a.account_code}</span>
           <span>{a.account_name}</span>
           <span className="text-right">{a.debit_total > 0 ? fmt(a.debit_total) : ''}</span>
           <span className="text-right">{a.credit_total > 0 ? fmt(a.credit_total) : ''}</span>
         </div>
       ))}
-      <div className="rpt-tb-totals grid grid-cols-4 gap-2 text-sm font-bold py-1 border-t-2 border-double border-neutral-400 dark:border-neutral-500 mt-1 pt-2 text-neutral-900 dark:text-white">
+      <div className="rpt-tb-totals grid grid-cols-4 gap-2 text-sm font-bold py-1 mt-1 pt-2" style={{ borderTop: '2px double var(--border-color)', color: 'var(--text-primary)' }}>
         <span></span>
         <span>Totals</span>
         <span className="text-right">{fmt(data.total_debits)}</span>
@@ -271,6 +308,19 @@ export default function ReportsPage() {
   const [asOfDate, setAsOfDate] = useState(todayStr())
   const [startDate, setStartDate] = useState(janFirstStr())
   const [endDate, setEndDate] = useState(todayStr())
+  const [activePreset, setActivePreset] = useState<string | null>('YTD')
+
+  const PRESETS = getPresets()
+
+  function applyPreset(p: Preset) {
+    setActivePreset(p.label)
+    if (needsRange && p.range) {
+      setStartDate(p.range[0])
+      setEndDate(p.range[1])
+    } else if (!needsRange && p.asOf) {
+      setAsOfDate(p.asOf)
+    }
+  }
 
   const needsRange = activeTab === 'profit-loss' || activeTab === 'cash-flow'
 
@@ -298,10 +348,10 @@ export default function ReportsPage() {
   if (!company?.id) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
-        <BarChart3 className="h-16 w-16 text-neutral-400 dark:text-white/30 mb-4" />
-        <h2 className="text-xl font-semibold text-neutral-900 dark:text-white mb-2">No company set up</h2>
-        <p className="text-neutral-600 dark:text-white/60 max-w-md mb-6">Finish onboarding to use Reports.</p>
-        <a href="/onboarding" className="px-4 py-2 rounded-full bg-gradient-to-r from-fuchsia-500 to-indigo-500 text-sm font-semibold text-white">Complete onboarding</a>
+        <BarChart3 className="h-16 w-16 mb-4" style={{ color: 'var(--text-muted)' }} />
+        <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No company set up</h2>
+        <p className="max-w-md mb-6" style={{ color: 'var(--text-secondary)' }}>Finish onboarding to use Reports.</p>
+        <a href="/onboarding" className="px-4 py-2 rounded-full text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg, var(--neon-fuchsia), var(--neon-indigo))' }}>Complete onboarding</a>
       </div>
     )
   }
@@ -315,10 +365,10 @@ export default function ReportsPage() {
       {/* Header — hidden in print */}
       <div className="print:hidden flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <BarChart3 className="h-8 w-8 text-fuchsia-500" />
+          <BarChart3 className="h-8 w-8" style={{ color: 'var(--neon-fuchsia)' }} />
           <div>
-            <h1 className="text-2xl font-semibold text-neutral-900 dark:text-white">Reports</h1>
-            <p className="text-sm text-neutral-500">Financial Statements</p>
+            <h1 className="text-2xl font-semibold" style={{ color: 'var(--text-primary)' }}>Reports</h1>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Financial Statements</p>
           </div>
         </div>
         {data && !loading && (
@@ -335,7 +385,8 @@ export default function ReportsPage() {
               )
             }
             fileName={`${company?.name || 'report'}-${activeTab}-${needsRange ? endDate : asOfDate}.pdf`}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-neutral-300 dark:border-neutral-600 text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:hover:bg-neutral-800 transition-colors"
+            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-colors"
+            style={{ border: '1px solid var(--border-color)', color: 'var(--text-secondary)', background: 'var(--bg-card)' }}
           >
             {({ loading: pdfLoading }) => (
               <>
@@ -348,16 +399,16 @@ export default function ReportsPage() {
       </div>
 
       {/* Tab Bar — hidden in print */}
-      <div className="print:hidden flex gap-1 border-b border-neutral-200 dark:border-neutral-700">
+      <div className="print:hidden flex gap-1 border-b" style={{ borderColor: 'var(--border-color)' }}>
         {TABS.map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              activeTab === tab.key
-                ? 'border-fuchsia-500 text-fuchsia-600 dark:text-fuchsia-400'
-                : 'border-transparent text-neutral-500 hover:text-neutral-700 dark:hover:text-neutral-300'
-            }`}
+            className="px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px"
+            style={{
+              borderColor: activeTab === tab.key ? 'var(--neon-fuchsia)' : 'transparent',
+              color: activeTab === tab.key ? 'var(--neon-fuchsia)' : 'var(--text-muted)',
+            }}
           >
             {tab.label}
           </button>
@@ -365,39 +416,66 @@ export default function ReportsPage() {
       </div>
 
       {/* Date Controls — hidden in print */}
-      <div className="print:hidden flex flex-wrap items-center gap-3">
-        {needsRange ? (
-          <>
-            <label className="text-sm text-neutral-600 dark:text-neutral-400">From</label>
-            <input
-              type="date"
-              value={startDate}
-              onChange={e => setStartDate(e.target.value)}
-              className="px-3 py-1.5 text-sm rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
-            />
-            <label className="text-sm text-neutral-600 dark:text-neutral-400">To</label>
-            <input
-              type="date"
-              value={endDate}
-              onChange={e => setEndDate(e.target.value)}
-              className="px-3 py-1.5 text-sm rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
-            />
-          </>
-        ) : (
-          <>
-            <label className="text-sm text-neutral-600 dark:text-neutral-400">As of</label>
-            <input
-              type="date"
-              value={asOfDate}
-              onChange={e => setAsOfDate(e.target.value)}
-              className="px-3 py-1.5 text-sm rounded-lg border border-neutral-300 dark:border-neutral-600 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white"
-            />
-          </>
-        )}
+      <div className="print:hidden space-y-3">
+        {/* Preset buttons */}
+        <div className="flex flex-wrap gap-2">
+          {PRESETS.map(p => (
+            <button
+              key={p.label}
+              onClick={() => applyPreset(p)}
+              className="px-3 py-1.5 text-xs font-medium rounded-lg transition-all"
+              style={{
+                border: '1px solid var(--border-color)',
+                background: activePreset === p.label
+                  ? 'linear-gradient(135deg, rgba(217,70,239,0.3), rgba(34,211,238,0.3))'
+                  : 'var(--bg-card)',
+                color: activePreset === p.label ? 'var(--text-primary)' : 'var(--text-muted)',
+                borderColor: activePreset === p.label ? 'rgba(217,70,239,0.6)' : 'var(--border-color)',
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Date inputs */}
+        <div className="flex flex-wrap items-center gap-3">
+          {needsRange ? (
+            <>
+              <label className="text-sm" style={{ color: 'var(--text-muted)' }}>From</label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={e => { setStartDate(e.target.value); setActivePreset(null) }}
+                className="px-3 py-1.5 text-sm rounded-lg"
+                style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              />
+              <label className="text-sm" style={{ color: 'var(--text-muted)' }}>To</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={e => { setEndDate(e.target.value); setActivePreset(null) }}
+                className="px-3 py-1.5 text-sm rounded-lg"
+                style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              />
+            </>
+          ) : (
+            <>
+              <label className="text-sm" style={{ color: 'var(--text-muted)' }}>As of</label>
+              <input
+                type="date"
+                value={asOfDate}
+                onChange={e => { setAsOfDate(e.target.value); setActivePreset(null) }}
+                className="px-3 py-1.5 text-sm rounded-lg"
+                style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              />
+            </>
+          )}
+        </div>
       </div>
 
       {/* Report Container */}
-      <div className="rpt-container rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-6">
+      <div className="rpt-container rounded-xl p-6" style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)' }}>
         {/* Print Header — professional letterhead (visible only when printing) */}
         <div className="rpt-print-header hidden">
           <div className="rpt-print-company">{company?.name || 'Company'}</div>
@@ -407,8 +485,8 @@ export default function ReportsPage() {
 
         {/* Screen Title — hidden in print */}
         <div className="print:hidden mb-4">
-          <h2 className="text-lg font-semibold text-neutral-900 dark:text-white">{TAB_TITLES[activeTab]}</h2>
-          <p className="text-xs text-neutral-500">{dateSubtitle}</p>
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{TAB_TITLES[activeTab]}</h2>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{dateSubtitle}</p>
         </div>
 
         {loading ? (
@@ -425,7 +503,7 @@ export default function ReportsPage() {
         )}
 
         {/* Footer */}
-        <div className="rpt-footer mt-6 pt-3 border-t border-neutral-100 dark:border-neutral-800 text-xs text-neutral-400 flex justify-between">
+        <div className="rpt-footer mt-6 pt-3 text-xs flex justify-between" style={{ borderTop: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>
           <span>Accrual Basis</span>
           <span>Generated {new Date().toLocaleString()}</span>
         </div>

@@ -124,6 +124,58 @@ def update_account(account_id: str, account: AccountUpdate, auth: Dict[str, str]
 
     return response.data[0]
 
+@router.get("/{account_id}/register")
+def get_account_register(
+    account_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    auth: Dict[str, str] = Depends(get_current_user_company),
+):
+    """Get all journal lines for an account (account register / ledger)."""
+    company_id = auth["company_id"]
+
+    account_check = supabase.table("accounts").select("*").eq("id", account_id).eq("company_id", company_id).single().execute()
+    if not account_check.data:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    q = supabase.table("journal_lines") \
+        .select("*, journal_entries(journal_number, entry_date, memo, status)") \
+        .eq("account_id", account_id)
+
+    if start_date:
+        q = q.gte("journal_entries.entry_date", start_date)
+    if end_date:
+        q = q.lte("journal_entries.entry_date", end_date)
+
+    lines_resp = q.order("created_at").execute()
+    lines = lines_resp.data or []
+
+    running_balance = 0.0
+    result = []
+    for line in lines:
+        entry = line.get("journal_entries") or {}
+        debit = float(line.get("debit", 0) or 0)
+        credit = float(line.get("credit", 0) or 0)
+        running_balance += debit - credit
+        result.append({
+            "id": line["id"],
+            "journal_entry_id": line.get("journal_entry_id"),
+            "journal_number": entry.get("journal_number", ""),
+            "entry_date": entry.get("entry_date", ""),
+            "memo": line.get("description") or entry.get("memo", ""),
+            "debit": debit,
+            "credit": credit,
+            "running_balance": running_balance,
+            "status": entry.get("status", ""),
+        })
+
+    return {
+        "account": account_check.data,
+        "lines": result,
+        "ending_balance": running_balance,
+    }
+
+
 @router.delete("/{account_id}")
 def delete_account(account_id: str, auth: Dict[str, str] = Depends(get_current_user_company)):
     """Delete an account"""

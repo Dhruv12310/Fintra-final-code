@@ -184,7 +184,7 @@ export default function EnhancedAIConsole() {
           >
             <Brain className="w-5 h-5 text-white" />
           </div>
-          <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>AI Financial Companion</h2>
+          <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Fintra AI Copilot</h2>
         </div>
 
         {/* Mode Toggle */}

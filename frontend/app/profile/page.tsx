@@ -1,693 +1,512 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import {
-  User,
-  Building2,
-  Mail,
-  Phone,
-  MapPin,
-  Calendar,
-  LogOut,
-  Save,
-  Upload,
-  AlertCircle,
-  Globe,
-  Users,
-  DollarSign,
-  TrendingUp,
-  Target,
-  Package,
-  Zap
-} from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { Store, LogOut, AlertCircle, Loader2, Check, X, Pencil } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { api } from '@/lib/api'
 import { useRouter } from 'next/navigation'
 
-export default function Profile() {
-  const { user, supabaseUser, company, signOut, refreshUser, loading: authLoading } = useAuth()
-  const router = useRouter()
-  const [activeTab, setActiveTab] = useState<'personal' | 'company'>('personal')
-  const [loading, setLoading] = useState(false)
-  const [personalInfo, setPersonalInfo] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    role: '',
-    avatar: ''
-  })
+// ─── constants ────────────────────────────────────────────────────────────────
 
-  const [companyInfo, setCompanyInfo] = useState({
-    // Basic Info
-    name: '',
-    industry: '',
-    website: '',
+const INDUSTRIES = [
+  'SaaS / Software', 'E-commerce / Retail', 'Professional Services',
+  'Healthcare', 'Manufacturing', 'Food & Beverage', 'Real Estate',
+  'Construction', 'Marketing / Advertising', 'Education', 'Consulting', 'Other',
+]
 
-    // Location (from onboarding)
-    location_city: '',
-    location_state: '',
-    location_country: 'USA',
-    location_zip: '',
+const BUSINESS_TYPES: Record<string, string> = {
+  sole_proprietor: 'Sole Proprietor',
+  llc: 'LLC',
+  s_corp: 'S-Corporation',
+  corporation: 'C-Corporation',
+  partnership: 'Partnership',
+  other: 'Not sure / Other / None',
+}
 
-    // Business Profile (from onboarding)
-    business_type: '',
-    employee_count: 0,
-    annual_revenue: 0,
-    founded_year: new Date().getFullYear(),
-    growth_stage: '',
+const US_STATES = [
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
+  'VA','WA','WV','WI','WY',
+]
 
-    // Market Context (from onboarding)
-    target_market: '',
-    primary_products: [] as string[],
-    competitors: [] as string[],
+function maskEIN(v: string) {
+  const d = v.replace(/\D/g, '')
+  return d.length <= 4 ? v : '•'.repeat(d.length - 4) + d.slice(-4)
+}
 
-    // Legacy fields
-    email: '',
-    phone: '',
-    taxId: '',
-    fiscalYearEnd: ''
-  })
+function fmtAddr(street: string, city: string, state: string, zip: string) {
+  const l2 = [city, state, zip].filter(Boolean).join(', ')
+  if (!street && !l2) return ''
+  if (!street) return l2
+  if (!l2) return street
+  return `${street}\n${l2}`
+}
 
-  useEffect(() => {
-    if (!authLoading && !supabaseUser) {
-      router.push('/login')
-      return
-    }
+// ─── shared input style (adapts to dark/light) ────────────────────────────────
+const INP = 'w-full px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:ring-2 transition-all'
+const INP_S: React.CSSProperties = {
+  backgroundColor: 'var(--bg-primary)',
+  border: '1px solid var(--border-color)',
+  color: 'var(--text-primary)',
+}
 
-    if (user) {
-      setPersonalInfo({
-        fullName: user.full_name || '',
-        email: user.email || '',
-        phone: '',
-        role: user.role || '',
-        avatar: ''
-      })
-    }
+// ─── Section card ─────────────────────────────────────────────────────────────
+function Card({
+  title, subtitle, topEdit, children,
+}: {
+  title: string
+  subtitle: string
+  topEdit?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+      {/* header */}
+      <div className="flex items-start justify-between px-6 py-5">
+        <div>
+          <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{title}</h2>
+          <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>{subtitle}</p>
+        </div>
+        {topEdit}
+      </div>
+      {/* rows */}
+      <div style={{ borderTop: '1px solid var(--border-color)' }}>
+        {children}
+      </div>
+    </div>
+  )
+}
 
-    if (company) {
-      setCompanyInfo({
-        // Basic Info
-        name: company.name || '',
-        industry: company.industry || '',
-        website: company.website || '',
-
-        // Location (from onboarding)
-        location_city: company.location_city || '',
-        location_state: company.location_state || '',
-        location_country: company.location_country || 'USA',
-        location_zip: company.location_zip || '',
-
-        // Business Profile (from onboarding)
-        business_type: company.business_type || '',
-        employee_count: company.employee_count || 0,
-        annual_revenue: company.annual_revenue || 0,
-        founded_year: company.founded_year || new Date().getFullYear(),
-        growth_stage: company.growth_stage || '',
-
-        // Market Context (from onboarding)
-        target_market: company.target_market || '',
-        primary_products: company.primary_products || [],
-        competitors: company.competitors || [],
-
-        // Legacy fields
-        email: company.email || '',
-        phone: company.phone || '',
-        taxId: company.tax_id || '',
-        fiscalYearEnd: company.fiscal_year_end || ''
-      })
-    }
-  }, [user, company, authLoading, router])
-
-  const handlePersonalSave = async () => {
-    if (!user) return
-
-    try {
-      setLoading(true)
-      await api.patch(`/users/${user.id}`, {
-        full_name: personalInfo.fullName,
-        email: personalInfo.email
-      })
-      await refreshUser()
-      alert('Personal information saved!')
-    } catch (error) {
-      console.error('Failed to save personal info:', error)
-      alert('Failed to save personal information')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleCompanySave = async () => {
-    if (!company) return
-
-    try {
-      setLoading(true)
-      await api.patch(`/companies/${company.id}`, {
-        // Basic Info
-        name: companyInfo.name,
-        industry: companyInfo.industry,
-        website: companyInfo.website,
-
-        // Location
-        location_city: companyInfo.location_city,
-        location_state: companyInfo.location_state,
-        location_country: companyInfo.location_country,
-        location_zip: companyInfo.location_zip,
-
-        // Business Profile
-        business_type: companyInfo.business_type,
-        employee_count: companyInfo.employee_count,
-        annual_revenue: companyInfo.annual_revenue,
-        founded_year: companyInfo.founded_year,
-        growth_stage: companyInfo.growth_stage,
-
-        // Market Context
-        target_market: companyInfo.target_market,
-        primary_products: companyInfo.primary_products,
-        competitors: companyInfo.competitors,
-
-        // Legacy fields
-        email: companyInfo.email || null,
-        phone: companyInfo.phone || null,
-        tax_id: companyInfo.taxId || null,
-        fiscal_year_end: companyInfo.fiscalYearEnd || null
-      })
-      await refreshUser()
-      alert('Company information saved!')
-    } catch (error) {
-      console.error('Failed to save company info:', error)
-      alert('Failed to save company information')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleLogout = async () => {
-    await signOut()
-  }
-
-  const initials = useMemo(() => {
-    const source = personalInfo.fullName || companyInfo.name || 'Endless'
-    return source
-      .split(' ')
-      .filter(Boolean)
-      .map(word => word[0]?.toUpperCase())
-      .slice(0, 2)
-      .join('') || 'EN'
-  }, [personalInfo.fullName, companyInfo.name])
-
-  const inputStyles = 'mt-2 w-full rounded-2xl border border-gray-300 dark:border-white/10 bg-white dark:bg-white/5 px-4 py-3 text-sm text-gray-900 dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-fuchsia-500/40'
-  const labelStyles = 'text-xs uppercase tracking-[0.35em] text-gray-600 dark:text-white/50'
+// ─── Display/edit row ─────────────────────────────────────────────────────────
+function Row({
+  label, value, field, active, onEdit, onSave, onCancel, saving, children,
+}: {
+  label: string
+  value?: string
+  field: string
+  active: string | null
+  onEdit: (f: string) => void
+  onSave: () => void
+  onCancel: () => void
+  saving: boolean
+  children: React.ReactNode
+}) {
+  const editing = active === field
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-gray-900 dark:text-white p-8 space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.4em] text-gray-600 dark:text-white/60">Control Center</p>
-          <h1 className="text-3xl font-semibold mt-2 text-gray-900 dark:text-white">Profile & Company Settings</h1>
-          <p className="text-gray-600 dark:text-white/60 mt-1">Keep your identity and firm metadata in sync with Endless Copilot.</p>
-        </div>
-        <button
-          onClick={handleLogout}
-          className="inline-flex items-center gap-2 rounded-full border border-gray-300 dark:border-white/15 bg-white dark:bg-white/5 px-4 py-2 text-sm text-gray-700 dark:text-white/80 transition hover:text-gray-900 dark:hover:text-white"
-        >
-          <LogOut className="w-4 h-4" />
-          Log out
-        </button>
+    <div className="flex items-start gap-4 px-6 py-4" style={{ borderBottom: '1px solid var(--border-color)' }}>
+      {/* label */}
+      <div className="w-44 shrink-0 pt-0.5 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+        {label}
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-4">
-        <div className="rounded-3xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-xl p-6 space-y-4 shadow-lg">
-          <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-2xl bg-gradient-to-r from-fuchsia-500 to-indigo-500 flex items-center justify-center text-xl font-semibold text-white">
-              {initials}
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 dark:text-white/60 uppercase tracking-[0.3em]">Identity</p>
-              <h3 className="text-2xl font-semibold text-gray-900 dark:text-white">{personalInfo.fullName || 'Demo User'}</h3>
-              <p className="text-gray-600 dark:text-white/60 text-sm">{personalInfo.email || 'demo@endless.finance'}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-sm text-gray-700 dark:text-white/70">
-            <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 p-3 flex items-center gap-2">
-              <Mail className="w-4 h-4 text-fuchsia-500 dark:text-fuchsia-300" />
-              {personalInfo.role || 'Admin'}
-            </div>
-            <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 p-3 flex items-center gap-2">
-              <Calendar className="w-4 h-4 text-cyan-500 dark:text-cyan-300" />
-              Joined Endless
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-xl p-6 space-y-4 shadow-lg">
-          <div className="flex items-center gap-4">
-            <div className="h-16 w-16 rounded-2xl border border-gray-300 dark:border-white/20 bg-gray-50 dark:bg-white/5 flex items-center justify-center">
-              <Building2 className="w-6 h-6 text-fuchsia-500 dark:text-fuchsia-200" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600 dark:text-white/60 uppercase tracking-[0.3em]">Company</p>
-              <h3 className="text-2xl font-semibold text-gray-900 dark:text-white">{companyInfo.name || 'Demo Company'}</h3>
-              <p className="text-gray-600 dark:text-white/60 text-sm">{companyInfo.industry || 'Technology'}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-3 text-sm text-gray-700 dark:text-white/70">
-            <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 p-3 flex items-center gap-2">
-              <Phone className="w-4 h-4 text-emerald-500 dark:text-emerald-300" />
-              {companyInfo.phone || '—'}
-            </div>
-            <div className="rounded-2xl border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 p-3 flex items-center gap-2">
-              <MapPin className="w-4 h-4 text-sky-500 dark:text-sky-300" />
-              {companyInfo.location_city ? `${companyInfo.location_city}, ${companyInfo.location_state}` : 'Unknown HQ'}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="flex gap-3 border-b border-gray-200 dark:border-white/10 pb-1">
-        {[
-          { key: 'personal', label: 'Personal Identity', icon: User },
-          { key: 'company', label: 'Company Metadata', icon: Building2 }
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key as 'personal' | 'company')}
-            className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition ${
-              activeTab === tab.key
-                ? 'bg-gradient-to-r from-fuchsia-500/50 to-cyan-500/50 text-white shadow-[0_10px_40px_rgba(147,51,234,0.35)]'
-                : 'text-gray-600 dark:text-white/60 hover:text-gray-900 dark:hover:text-white'
-            }`}
-          >
-            <tab.icon className="w-4 h-4" />
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'personal' && (
-        <div className="rounded-3xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-xl p-6 space-y-8 shadow-lg">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 dark:border-white/10 pb-6">
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-gray-600 dark:text-white/50">Profile photo</p>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-1">Update your avatar</h3>
-            </div>
-            <button className="inline-flex items-center gap-2 rounded-full border border-gray-300 dark:border-white/15 bg-gray-50 dark:bg-white/5 px-4 py-2 text-sm text-gray-700 dark:text-white/80">
-              <Upload className="w-4 h-4" />
-              Upload photo
-            </button>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6">
-            <div>
-              <p className={labelStyles}>Full name</p>
-              <input
-                type="text"
-                value={personalInfo.fullName}
-                onChange={(e) => setPersonalInfo({ ...personalInfo, fullName: e.target.value })}
-                className={inputStyles}
-              />
-            </div>
-            <div>
-              <p className={labelStyles}>Email</p>
-              <input
-                type="email"
-                value={personalInfo.email}
-                onChange={(e) => setPersonalInfo({ ...personalInfo, email: e.target.value })}
-                className={inputStyles}
-              />
-            </div>
-            <div>
-              <p className={labelStyles}>Phone</p>
-              <input
-                type="tel"
-                value={personalInfo.phone}
-                onChange={(e) => setPersonalInfo({ ...personalInfo, phone: e.target.value })}
-                className={inputStyles}
-                placeholder="+1 555 0100"
-              />
-            </div>
-            <div>
-              <p className={labelStyles}>Role</p>
-              <select
-                value={personalInfo.role}
-                onChange={(e) => setPersonalInfo({ ...personalInfo, role: e.target.value })}
-                className={`${inputStyles} bg-gray-50 dark:bg-slate-950/40`}
+      {/* value or edit form */}
+      <div className="flex-1 min-w-0">
+        {editing ? (
+          <div className="space-y-3">
+            {children}
+            <div className="flex gap-2">
+              <button
+                onClick={onSave}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white disabled:opacity-50 transition"
+                style={{ background: 'linear-gradient(135deg, var(--neon-cyan), var(--neon-fuchsia))' }}
               >
-                <option value="Admin">Admin</option>
-                <option value="Accountant">Accountant</option>
-                <option value="User">User</option>
-                <option value="Viewer">Viewer</option>
-              </select>
+                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                Save
+              </button>
+              <button
+                onClick={onCancel}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium transition"
+                style={{ border: '1px solid var(--border-color)', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-primary)' }}
+              >
+                <X className="w-3 h-3" /> Cancel
+              </button>
             </div>
           </div>
+        ) : (
+          <span className="text-sm whitespace-pre-line" style={{ color: value ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+            {value || 'None listed'}
+          </span>
+        )}
+      </div>
 
-          <div className="flex flex-wrap justify-end gap-3 border-t border-gray-200 dark:border-white/10 pt-6">
-            <button className="rounded-full border border-gray-300 dark:border-white/15 px-5 py-2 text-sm text-gray-700 dark:text-white/70 hover:text-gray-900 dark:hover:text-white">
-              Cancel
-            </button>
-            <button
-              onClick={handlePersonalSave}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-5 py-2 text-sm font-semibold shadow-[0_15px_45px_rgba(129,80,255,0.45)] disabled:opacity-40 text-white"
-            >
-              <Save className="w-4 h-4" />
-              Save changes
-            </button>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'company' && (
-        <div className="rounded-3xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-xl p-6 space-y-8 shadow-lg">
-          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-200 dark:border-white/10 pb-6">
-            <div>
-              <p className="text-xs uppercase tracking-[0.4em] text-gray-600 dark:text-white/50">Company Profile</p>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-1">Business Metadata for AI Insights</h3>
-              <p className="text-xs text-gray-600 dark:text-white/50 mt-1">This data powers personalized AI recommendations</p>
-            </div>
-            <button className="inline-flex items-center gap-2 rounded-full border border-gray-300 dark:border-white/15 bg-gray-50 dark:bg-white/5 px-4 py-2 text-sm text-gray-700 dark:text-white/80">
-              <Upload className="w-4 h-4" />
-              Upload logo
-            </button>
-          </div>
-
-          {/* Basic Information */}
-          <div className="space-y-6">
-            <div className="flex items-center gap-2">
-              <Building2 className="w-5 h-5 text-fuchsia-500 dark:text-fuchsia-300" />
-              <h4 className="text-sm font-semibold uppercase tracking-[0.3em] text-gray-700 dark:text-white/70">Basic Information</h4>
-            </div>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div className="md:col-span-2">
-                <p className={labelStyles}>Company name</p>
-                <input
-                  type="text"
-                  value={companyInfo.name}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, name: e.target.value })}
-                  className={inputStyles}
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>Industry</p>
-                <input
-                  type="text"
-                  value={companyInfo.industry}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, industry: e.target.value })}
-                  className={inputStyles}
-                  placeholder="e.g., SaaS / Software"
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>
-                  <Globe className="w-3 h-3 inline mr-1" />
-                  Website <span className="text-[0.65rem] normal-case tracking-normal text-gray-500 dark:text-white/40">(improves AI accuracy)</span>
-                </p>
-                <input
-                  type="url"
-                  value={companyInfo.website}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, website: e.target.value })}
-                  className={inputStyles}
-                  placeholder="https://example.com"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Location */}
-          <div className="space-y-6 border-t border-gray-200 dark:border-white/10 pt-6">
-            <div className="flex items-center gap-2">
-              <MapPin className="w-5 h-5 text-cyan-500 dark:text-cyan-300" />
-              <h4 className="text-sm font-semibold uppercase tracking-[0.3em] text-gray-700 dark:text-white/70">Location</h4>
-            </div>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <p className={labelStyles}>City</p>
-                <input
-                  type="text"
-                  value={companyInfo.location_city}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, location_city: e.target.value })}
-                  className={inputStyles}
-                  placeholder="Phoenix"
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>State</p>
-                <input
-                  type="text"
-                  value={companyInfo.location_state}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, location_state: e.target.value })}
-                  className={inputStyles}
-                  placeholder="AZ"
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>ZIP code</p>
-                <input
-                  type="text"
-                  value={companyInfo.location_zip}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, location_zip: e.target.value })}
-                  className={inputStyles}
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>Country</p>
-                <input
-                  type="text"
-                  value={companyInfo.location_country}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, location_country: e.target.value })}
-                  className={inputStyles}
-                  placeholder="USA"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Business Profile */}
-          <div className="space-y-6 border-t border-gray-200 dark:border-white/10 pt-6">
-            <div className="flex items-center gap-2">
-              <Users className="w-5 h-5 text-emerald-500 dark:text-emerald-300" />
-              <h4 className="text-sm font-semibold uppercase tracking-[0.3em] text-gray-700 dark:text-white/70">Business Profile</h4>
-            </div>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <p className={labelStyles}>Business Type</p>
-                <select
-                  value={companyInfo.business_type}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, business_type: e.target.value })}
-                  className={`${inputStyles} bg-gray-50 dark:bg-slate-950/40`}
-                >
-                  <option value="">Select type</option>
-                  <option value="sole_proprietor">Sole Proprietor</option>
-                  <option value="llc">LLC</option>
-                  <option value="s_corp">S-Corporation</option>
-                  <option value="corporation">C-Corporation</option>
-                  <option value="partnership">Partnership</option>
-                </select>
-              </div>
-              <div>
-                <p className={labelStyles}>Growth Stage</p>
-                <select
-                  value={companyInfo.growth_stage}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, growth_stage: e.target.value })}
-                  className={`${inputStyles} bg-gray-50 dark:bg-slate-950/40`}
-                >
-                  <option value="">Select stage</option>
-                  <option value="startup">Startup (0-2 years)</option>
-                  <option value="growth">Growth (2-5 years)</option>
-                  <option value="mature">Mature (5+ years)</option>
-                  <option value="enterprise">Enterprise</option>
-                </select>
-              </div>
-              <div>
-                <p className={labelStyles}>Employees</p>
-                <input
-                  type="number"
-                  value={companyInfo.employee_count || ''}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, employee_count: parseInt(e.target.value) || 0 })}
-                  className={inputStyles}
-                  min="0"
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>
-                  <DollarSign className="w-3 h-3 inline mr-1" />
-                  Annual Revenue (USD)
-                </p>
-                <input
-                  type="number"
-                  value={companyInfo.annual_revenue || ''}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, annual_revenue: parseFloat(e.target.value) || 0 })}
-                  className={inputStyles}
-                  min="0"
-                  placeholder="250000"
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>Founded Year</p>
-                <input
-                  type="number"
-                  value={companyInfo.founded_year}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, founded_year: parseInt(e.target.value) })}
-                  className={inputStyles}
-                  min="1900"
-                  max={new Date().getFullYear()}
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>Target Market</p>
-                <select
-                  value={companyInfo.target_market}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, target_market: e.target.value })}
-                  className={`${inputStyles} bg-gray-50 dark:bg-slate-950/40`}
-                >
-                  <option value="">Select market</option>
-                  <option value="B2B">B2B</option>
-                  <option value="B2C">B2C</option>
-                  <option value="B2B2C">B2B2C</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Market Context */}
-          <div className="space-y-6 border-t border-gray-200 dark:border-white/10 pt-6">
-            <div className="flex items-center gap-2">
-              <Target className="w-5 h-5 text-indigo-500 dark:text-indigo-300" />
-              <h4 className="text-sm font-semibold uppercase tracking-[0.3em] text-gray-700 dark:text-white/70">Market Context (AI-Powered)</h4>
-            </div>
-            <div className="space-y-4">
-              <div>
-                <p className={labelStyles}>
-                  <Package className="w-3 h-3 inline mr-1" />
-                  Primary Products/Services
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {companyInfo.primary_products.map((product, i) => (
-                    <span
-                      key={i}
-                      className="px-3 py-1.5 rounded-full text-xs flex items-center gap-2 border border-cyan-500 dark:border-cyan-400 bg-cyan-50 dark:bg-cyan-500/10 text-cyan-700 dark:text-cyan-300"
-                    >
-                      {product}
-                      <button
-                        onClick={() => setCompanyInfo({
-                          ...companyInfo,
-                          primary_products: companyInfo.primary_products.filter((_, idx) => idx !== i)
-                        })}
-                        className="hover:opacity-70"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-500 dark:text-white/40 mt-2">Managed in onboarding - refresh to see latest</p>
-              </div>
-              <div>
-                <p className={labelStyles}>
-                  <Zap className="w-3 h-3 inline mr-1" />
-                  Competitors
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {companyInfo.competitors.map((competitor, i) => (
-                    <span
-                      key={i}
-                      className="px-3 py-1.5 rounded-full text-xs flex items-center gap-2 border border-emerald-500 dark:border-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                    >
-                      {competitor}
-                      <button
-                        onClick={() => setCompanyInfo({
-                          ...companyInfo,
-                          competitors: companyInfo.competitors.filter((_, idx) => idx !== i)
-                        })}
-                        className="hover:opacity-70"
-                      >
-                        ×
-                      </button>
-                    </span>
-                  ))}
-                </div>
-                <p className="text-xs text-gray-500 dark:text-white/40 mt-2">Used for competitive intelligence - update as needed</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Additional Fields */}
-          <div className="space-y-6 border-t border-gray-200 dark:border-white/10 pt-6">
-            <div className="flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-rose-500 dark:text-rose-300" />
-              <h4 className="text-sm font-semibold uppercase tracking-[0.3em] text-gray-700 dark:text-white/70">Additional Information</h4>
-            </div>
-            <div className="grid md:grid-cols-2 gap-6">
-              <div>
-                <p className={labelStyles}>Tax ID (EIN)</p>
-                <input
-                  type="text"
-                  value={companyInfo.taxId}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, taxId: e.target.value })}
-                  className={inputStyles}
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>Fiscal year end</p>
-                <input
-                  type="text"
-                  value={companyInfo.fiscalYearEnd}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, fiscalYearEnd: e.target.value })}
-                  placeholder="MM-DD"
-                  className={inputStyles}
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>Email</p>
-                <input
-                  type="email"
-                  value={companyInfo.email}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, email: e.target.value })}
-                  className={inputStyles}
-                />
-              </div>
-              <div>
-                <p className={labelStyles}>Phone</p>
-                <input
-                  type="tel"
-                  value={companyInfo.phone}
-                  onChange={(e) => setCompanyInfo({ ...companyInfo, phone: e.target.value })}
-                  className={inputStyles}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap justify-end gap-3 border-t border-gray-200 dark:border-white/10 pt-6">
-            <button className="rounded-full border border-gray-300 dark:border-white/15 px-5 py-2 text-sm text-gray-700 dark:text-white/70 hover:text-gray-900 dark:hover:text-white">
-              Cancel
-            </button>
-            <button
-              onClick={handleCompanySave}
-              disabled={loading}
-              className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-fuchsia-500 to-indigo-500 px-5 py-2 text-sm font-semibold shadow-[0_15px_45px_rgba(129,80,255,0.45)] disabled:opacity-40 text-white"
-            >
-              <Save className="w-4 h-4" />
-              {loading ? 'Saving...' : 'Save changes'}
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="rounded-3xl border border-rose-400/50 dark:border-rose-500/30 bg-rose-50 dark:bg-rose-500/10 p-6 space-y-4 shadow-lg">
-        <div className="flex items-center gap-3">
-          <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-300" />
-          <div>
-            <p className="text-sm uppercase tracking-[0.4em] text-rose-600 dark:text-rose-300">Danger zone</p>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-1">Delete account</h3>
-          </div>
-        </div>
-        <p className="text-sm text-gray-700 dark:text-white/70">
-          Permanently remove this user and company data from Endless Copilot. This cannot be undone once confirmed.
-        </p>
-        <button className="rounded-full bg-gradient-to-r from-rose-500 to-red-500 px-5 py-2 text-sm font-semibold shadow-[0_15px_45px_rgba(225,29,72,0.4)] text-white">
-          Delete account
+      {/* edit button */}
+      {!editing && (
+        <button
+          onClick={() => onEdit(field)}
+          className="shrink-0 text-sm font-semibold transition hover:opacity-70"
+          style={{ color: 'var(--neon-cyan)' }}
+        >
+          Edit
         </button>
+      )}
+    </div>
+  )
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
+export default function ProfilePage() {
+  const { user, supabaseUser, company, signOut, refreshUser, loading: authLoading } = useAuth()
+  const router = useRouter()
+  const co = company as any
+
+  const [active,     setActive]     = useState<string | null>(null)
+  const [legalOpen,  setLegalOpen]  = useState(false)
+  const [saving,     setSaving]     = useState(false)
+  const [buf,        setBuf]        = useState<Record<string, string>>({})
+  const [toast,      setToast]      = useState<{ ok: boolean; msg: string } | null>(null)
+
+  useEffect(() => {
+    if (!authLoading && !supabaseUser) router.push('/login')
+  }, [authLoading, supabaseUser, router])
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(t)
+  }, [toast])
+
+  const startEdit = useCallback((field: string, init: Record<string, string>) => {
+    setActive(field)
+    setBuf(init)
+    setLegalOpen(false)
+  }, [])
+
+  const cancelEdit = useCallback(() => { setActive(null); setBuf({}) }, [])
+
+  const openLegal = () => {
+    setLegalOpen(true)
+    setActive(null)
+    setBuf({
+      legal_business_name: co?.legal_business_name || '',
+      tax_id:              co?.tax_id              || '',
+      business_type:       co?.business_type       || '',
+      legal_address:       co?.legal_address       || '',
+    })
+  }
+
+  const patch = async (data: Record<string, any>) => {
+    if (!co?.id) return
+    setSaving(true)
+    try {
+      await api.patch(`/companies/${co.id}`, data)
+      await refreshUser()
+      setToast({ ok: true, msg: 'Saved.' })
+    } catch (e: any) {
+      setToast({ ok: false, msg: e?.response?.data?.detail || 'Failed to save.' })
+    } finally { setSaving(false) }
+  }
+
+  const saveRow = async () => { await patch(buf); setActive(null); setBuf({}) }
+  const saveLegal = async () => { await patch(buf); setLegalOpen(false); setBuf({}) }
+
+  if (authLoading) return (
+    <div className="flex items-center justify-center h-screen" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--neon-cyan)' }} />
+    </div>
+  )
+
+  return (
+    <div className="min-h-screen py-10 px-4" style={{ backgroundColor: 'var(--bg-primary)' }}>
+      <div className="max-w-2xl mx-auto space-y-6">
+
+        {/* ── Top bar ── */}
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Company Settings</h1>
+          <button
+            onClick={() => signOut()}
+            className="inline-flex items-center gap-2 text-sm transition hover:opacity-70"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            <LogOut className="w-4 h-4" /> Log out
+          </button>
+        </div>
+
+        {/* ── Toast ── */}
+        {toast && (
+          <div className="px-4 py-3 rounded-2xl text-sm font-medium" style={{
+            backgroundColor: toast.ok ? 'rgba(52,211,153,0.1)' : 'rgba(239,68,68,0.1)',
+            border: `1px solid ${toast.ok ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.3)'}`,
+            color: toast.ok ? 'var(--neon-emerald)' : '#ef4444',
+          }}>
+            {toast.msg}
+          </div>
+        )}
+
+        {/* ── Store icon ── */}
+        <div className="flex justify-center">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center" style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+              <Store className="w-10 h-10" style={{ color: 'var(--text-secondary)' }} />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full flex items-center justify-center cursor-pointer" style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+              <Pencil className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+            </div>
+          </div>
+        </div>
+
+        {/* ══════════════════════════════════════════════
+            COMPANY INFO
+        ══════════════════════════════════════════════ */}
+        <Card
+          title="Company info"
+          subtitle="This info may be connected to the Business Network or used for billing purposes."
+        >
+          <Row label="Name" value={co?.name} field="name" active={active}
+            onEdit={f => startEdit(f, { name: co?.name || '' })}
+            onSave={saveRow} onCancel={cancelEdit} saving={saving}>
+            <input className={INP} style={INP_S} placeholder="Acme Inc."
+              value={buf.name ?? ''} onChange={e => setBuf(b => ({ ...b, name: e.target.value }))} />
+          </Row>
+
+          <Row
+            label="Address"
+            value={fmtAddr(co?.address || '', co?.city || '', co?.state || '', co?.zip_code || '')}
+            field="address" active={active}
+            onEdit={f => startEdit(f, { address: co?.address || '', city: co?.city || '', state: co?.state || '', zip_code: co?.zip_code || '' })}
+            onSave={saveRow} onCancel={cancelEdit} saving={saving}
+          >
+            <input className={INP} style={INP_S} placeholder="Street address"
+              value={buf.address ?? ''} onChange={e => setBuf(b => ({ ...b, address: e.target.value }))} />
+            <div className="grid grid-cols-3 gap-2">
+              <input className={INP} style={INP_S} placeholder="City"
+                value={buf.city ?? ''} onChange={e => setBuf(b => ({ ...b, city: e.target.value }))} />
+              <select className={INP} style={INP_S}
+                value={buf.state ?? ''} onChange={e => setBuf(b => ({ ...b, state: e.target.value }))}>
+                <option value="">State</option>
+                {US_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <input className={INP} style={INP_S} placeholder="ZIP"
+                value={buf.zip_code ?? ''} onChange={e => setBuf(b => ({ ...b, zip_code: e.target.value }))} />
+            </div>
+          </Row>
+
+          <Row label="Email" value={co?.email} field="co_email" active={active}
+            onEdit={f => startEdit(f, { email: co?.email || '' })}
+            onSave={saveRow} onCancel={cancelEdit} saving={saving}>
+            <input className={INP} style={INP_S} type="email" placeholder="hello@acme.com"
+              value={buf.email ?? ''} onChange={e => setBuf(b => ({ ...b, email: e.target.value }))} />
+          </Row>
+
+          <Row label="Phone" value={co?.phone} field="phone" active={active}
+            onEdit={f => startEdit(f, { phone: co?.phone || '' })}
+            onSave={saveRow} onCancel={cancelEdit} saving={saving}>
+            <input className={INP} style={INP_S} type="tel" placeholder="6505550100"
+              value={buf.phone ?? ''} onChange={e => setBuf(b => ({ ...b, phone: e.target.value }))} />
+          </Row>
+
+          <Row label="Website" value={co?.website} field="website" active={active}
+            onEdit={f => startEdit(f, { website: co?.website || '' })}
+            onSave={saveRow} onCancel={cancelEdit} saving={saving}>
+            <input className={INP} style={INP_S} type="url" placeholder="https://acme.com"
+              value={buf.website ?? ''} onChange={e => setBuf(b => ({ ...b, website: e.target.value }))} />
+          </Row>
+
+          {/* Industry — last row, no bottom border */}
+          <div className="flex items-start gap-4 px-6 py-4">
+            <div className="w-44 shrink-0 pt-0.5 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Industry</div>
+            <div className="flex-1 min-w-0">
+              {active === 'industry' ? (
+                <div className="space-y-3">
+                  <select className={INP} style={INP_S}
+                    value={buf.industry ?? ''} onChange={e => setBuf(b => ({ ...b, industry: e.target.value }))}>
+                    <option value="">Select industry</option>
+                    {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
+                  </select>
+                  <div className="flex gap-2">
+                    <button onClick={saveRow} disabled={saving}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white disabled:opacity-50"
+                      style={{ background: 'linear-gradient(135deg, var(--neon-cyan), var(--neon-fuchsia))' }}>
+                      {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Save
+                    </button>
+                    <button onClick={cancelEdit}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium"
+                      style={{ border: '1px solid var(--border-color)', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-primary)' }}>
+                      <X className="w-3 h-3" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <span className="text-sm" style={{ color: co?.industry ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                  {co?.industry || 'None listed'}
+                </span>
+              )}
+            </div>
+            {active !== 'industry' && (
+              <button onClick={() => startEdit('industry', { industry: co?.industry || '' })}
+                className="shrink-0 text-sm font-semibold transition hover:opacity-70"
+                style={{ color: 'var(--neon-cyan)' }}>
+                Edit
+              </button>
+            )}
+          </div>
+        </Card>
+
+        {/* ══════════════════════════════════════════════
+            LEGAL INFO  (single Edit for whole section)
+        ══════════════════════════════════════════════ */}
+        <Card
+          title="Legal info"
+          subtitle="This is the info your business uses for tax purposes."
+          topEdit={
+            !legalOpen ? (
+              <button onClick={openLegal}
+                className="text-sm font-semibold mt-1 transition hover:opacity-70"
+                style={{ color: 'var(--neon-cyan)' }}>
+                Edit
+              </button>
+            ) : undefined
+          }
+        >
+          {legalOpen ? (
+            /* edit form */
+            <div className="px-6 py-5 space-y-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Legal business name</p>
+                <input className={INP} style={INP_S} placeholder="Acme Inc. (as registered)"
+                  value={buf.legal_business_name ?? ''}
+                  onChange={e => setBuf(b => ({ ...b, legal_business_name: e.target.value }))} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>EIN / SSN</p>
+                  <input className={INP} style={INP_S} placeholder="XX-XXXXXXX"
+                    value={buf.tax_id ?? ''}
+                    onChange={e => setBuf(b => ({ ...b, tax_id: e.target.value }))} />
+                </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Business type</p>
+                  <select className={INP} style={INP_S}
+                    value={buf.business_type ?? ''}
+                    onChange={e => setBuf(b => ({ ...b, business_type: e.target.value }))}>
+                    <option value="">Select type</option>
+                    {Object.entries(BUSINESS_TYPES).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>Legal address</p>
+                <textarea className={INP} style={{ ...INP_S, resize: 'none' } as any} rows={3}
+                  placeholder={"123 MAIN ST STE 100\nCOLUMBUS, OH 43207"}
+                  value={buf.legal_address ?? ''}
+                  onChange={e => setBuf(b => ({ ...b, legal_address: e.target.value }))} />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={saveLegal} disabled={saving}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white disabled:opacity-50"
+                  style={{ background: 'linear-gradient(135deg, var(--neon-cyan), var(--neon-fuchsia))' }}>
+                  {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Save
+                </button>
+                <button onClick={() => { setLegalOpen(false); setBuf({}) }}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium"
+                  style={{ border: '1px solid var(--border-color)', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-primary)' }}>
+                  <X className="w-3 h-3" /> Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* display rows */
+            <>
+              {[
+                { label: 'Legal business name', value: co?.legal_business_name },
+                { label: 'EIN / SSN',            value: co?.tax_id ? maskEIN(co.tax_id) : undefined },
+                { label: 'Business type',         value: BUSINESS_TYPES[co?.business_type] || co?.business_type },
+                { label: 'Legal address',         value: co?.legal_address },
+              ].map((r, i, arr) => (
+                <div key={r.label} className="flex items-start gap-4 px-6 py-4"
+                  style={{ borderBottom: i < arr.length - 1 ? '1px solid var(--border-color)' : undefined }}>
+                  <div className="w-44 shrink-0 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{r.label}</div>
+                  <div className="flex-1 text-sm whitespace-pre-line" style={{ color: r.value ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                    {r.value || 'None listed'}
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+        </Card>
+
+        {/* ══════════════════════════════════════════════
+            CUSTOMER CONTACT INFO
+        ══════════════════════════════════════════════ */}
+        <Card
+          title="Customer contact info"
+          subtitle="This is how customers get in touch with you."
+        >
+          <Row label="Customer email" value={co?.customer_email} field="customer_email" active={active}
+            onEdit={f => startEdit(f, { customer_email: co?.customer_email || '' })}
+            onSave={saveRow} onCancel={cancelEdit} saving={saving}>
+            <input className={INP} style={INP_S} type="email" placeholder="billing@acme.com"
+              value={buf.customer_email ?? ''}
+              onChange={e => setBuf(b => ({ ...b, customer_email: e.target.value }))} />
+          </Row>
+
+          {/* last row — no bottom border */}
+          <div className="flex items-start gap-4 px-6 py-4">
+            <div className="w-44 shrink-0 pt-0.5 text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Customer address</div>
+            <div className="flex-1 min-w-0">
+              {active === 'customer_address' ? (
+                <div className="space-y-3">
+                  <textarea className={INP} style={{ ...INP_S, resize: 'none' } as any} rows={3}
+                    placeholder={"123 Main St Ste 100\nColumbus, OH 43207"}
+                    value={buf.customer_address ?? ''}
+                    onChange={e => setBuf(b => ({ ...b, customer_address: e.target.value }))} />
+                  <div className="flex gap-2">
+                    <button onClick={saveRow} disabled={saving}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-white disabled:opacity-50"
+                      style={{ background: 'linear-gradient(135deg, var(--neon-cyan), var(--neon-fuchsia))' }}>
+                      {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Save
+                    </button>
+                    <button onClick={cancelEdit}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium"
+                      style={{ border: '1px solid var(--border-color)', color: 'var(--text-secondary)', backgroundColor: 'var(--bg-primary)' }}>
+                      <X className="w-3 h-3" /> Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <span className="text-sm whitespace-pre-line" style={{ color: co?.customer_address ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                  {co?.customer_address || 'None listed'}
+                </span>
+              )}
+            </div>
+            {active !== 'customer_address' && (
+              <button onClick={() => startEdit('customer_address', { customer_address: co?.customer_address || '' })}
+                className="shrink-0 text-sm font-semibold transition hover:opacity-70"
+                style={{ color: 'var(--neon-cyan)' }}>
+                Edit
+              </button>
+            )}
+          </div>
+        </Card>
+
+        {/* ── Footer ── */}
+        <div className="flex items-center justify-center gap-3 py-2 text-sm">
+          {['Privacy', 'Security', 'Terms of Service'].map((l, i, a) => (
+            <span key={l} className="flex items-center gap-3">
+              <a href="#" className="transition hover:opacity-70" style={{ color: 'var(--neon-cyan)' }}>{l}</a>
+              {i < a.length - 1 && <span style={{ color: 'var(--border-color)' }}>|</span>}
+            </span>
+          ))}
+        </div>
+
+        {/* ── Danger zone ── */}
+        <div className="rounded-2xl p-6" style={{ backgroundColor: 'rgba(239,68,68,0.05)', border: '1px solid rgba(239,68,68,0.2)' }}>
+          <div className="flex items-start gap-3 mb-4">
+            <AlertCircle className="w-5 h-5 mt-0.5 shrink-0 text-red-400" />
+            <div>
+              <p className="text-sm font-bold text-red-400">Danger zone</p>
+              <p className="text-sm mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                Permanently delete your account and all company data. This cannot be undone.
+              </p>
+            </div>
+          </div>
+          <button className="px-4 py-2 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition">
+            Delete account
+          </button>
+        </div>
+
       </div>
     </div>
   )

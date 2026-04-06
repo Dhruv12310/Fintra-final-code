@@ -196,7 +196,7 @@ export default function AskAIButton() {
           <div className="absolute inset-0 rounded-2xl blur-md bg-gradient-to-r from-fuchsia-500/70 to-sky-500/70" />
           <Sparkles className="relative h-4 w-4 text-white" />
         </span>
-        <span className="font-semibold tracking-wide">Ask Endless AI</span>
+        <span className="font-semibold tracking-wide">Ask Fintra AI</span>
         <span className="text-xs text-white/60 group-hover:text-white/80">⌘K</span>
       </motion.button>
 

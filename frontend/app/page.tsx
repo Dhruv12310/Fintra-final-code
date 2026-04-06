@@ -93,7 +93,7 @@ export default function RootPage() {
             <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--neon-emerald), var(--neon-cyan))' }}>
               <BarChart3 className="w-5 h-5 text-white" />
             </div>
-            <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Endless</span>
+            <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Fintra Finance OS</span>
           </div>
 
           <div className="flex items-center gap-3">
@@ -566,10 +566,10 @@ export default function RootPage() {
               <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--neon-emerald), var(--neon-cyan))' }}>
                 <BarChart3 className="w-4 h-4 text-white" />
               </div>
-              <span style={{ color: 'var(--text-secondary)' }}>Endless</span>
+              <span style={{ color: 'var(--text-secondary)' }}>Fintra Finance OS</span>
             </div>
             <div className="flex items-center gap-6">
-              <span>&copy; 2026 Endless</span>
+              <span>&copy; 2026 Fintra Finance OS</span>
               <a href="#" className="hover:underline" style={{ color: 'var(--text-secondary)' }}>Privacy</a>
               <a href="#" className="hover:underline" style={{ color: 'var(--text-secondary)' }}>Terms</a>
               <a href="#" className="hover:underline" style={{ color: 'var(--text-secondary)' }}>Contact</a>

@@ -8,7 +8,7 @@ import AppLayout from '@/components/AppLayout'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'Endless - Smart Accounting Platform',
+  title: 'Fintra Finance OS',
   description: 'AI-powered accounting and financial management',
 }
 

@@ -16,7 +16,9 @@ import {
   FileText,
   Receipt,
   BarChart3,
-  CalendarCheck
+  CalendarCheck,
+  Users,
+  CreditCard,
 } from 'lucide-react'
 import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -31,15 +33,16 @@ interface SidebarProps {
 const navigation = [
   { name: 'Dashboard', href: '/new-dashboard', icon: LayoutDashboard },
   { name: 'Banking', href: '/banking', icon: Landmark },
-  { name: 'Journals', href: '/new-journals', icon: BookOpen },
-  { name: 'Chart of Accounts', href: '/chart-of-accounts', icon: FolderTree },
   { name: 'Invoices', href: '/invoices', icon: FileText },
   { name: 'Bills', href: '/bills', icon: Receipt },
+  { name: 'Payments', href: '/payments', icon: CreditCard },
+  { name: 'Contacts', href: '/contacts', icon: Users },
+  { name: 'Journals', href: '/new-journals', icon: BookOpen },
+  { name: 'Chart of Accounts', href: '/chart-of-accounts', icon: FolderTree },
   { name: 'Reports', href: '/reports', icon: BarChart3 },
   { name: 'Month-end', href: '/month-end', icon: CalendarCheck },
-  { name: 'Profile', href: '/profile', icon: User },
   { name: 'Ask AI', href: '/ai', icon: Sparkles },
-  { name: 'Company', href: '/company', icon: Globe }
+  { name: 'Profile', href: '/profile', icon: User },
 ]
 
 export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
@@ -49,7 +52,7 @@ export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
   const isDark = theme === 'dark'
 
   const initials = useMemo(() => {
-    const source = user?.full_name || company?.name || 'Endless'
+    const source = user?.full_name || company?.name || 'Fintra'
     return (
       source
         .split(' ')
@@ -103,7 +106,7 @@ export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
                 className="leading-tight"
               >
                 <p className="text-[11px] uppercase tracking-[0.5em]" style={{ color: 'var(--text-muted)' }}>
-                  Endless
+                  Fintra
                 </p>
                 <p className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                   Finance OS
@@ -126,7 +129,7 @@ export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-6">
+      <nav className="flex-1 space-y-1 px-3 py-6 overflow-y-auto scrollbar-thin" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--border-color) transparent' }}>
         {navigation.map(item => {
           const isActive = pathname === item.href
           return (
@@ -217,7 +220,7 @@ export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
           </div>
           {!collapsed && (
             <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-              Realtime ledgers synced to Endless Copilot.
+              Realtime ledgers synced to Fintra Copilot.
             </p>
           )}
         </div>

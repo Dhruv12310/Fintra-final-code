@@ -299,7 +299,7 @@ export default function AIConsolePage() {
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Need More Insights?</h3>
         </div>
         <p className="text-sm text-gray-700 dark:text-white/70">
-          Use the <strong>Endless Copilot</strong> button (bottom right) to ask specific questions about your finances,
+          Use the <strong>Fintra Copilot</strong> button (bottom right) to ask specific questions about your finances,
           competitors, growth strategies, or anything else. The copilot blends your financial data with live web intelligence
           to give you actionable answers.
         </p>

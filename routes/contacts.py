@@ -68,3 +68,28 @@ async def create_contact(
     if not r.data:
         raise HTTPException(status_code=400, detail="Failed to create contact")
     return r.data[0]
+
+
+@router.patch("/{contact_id}")
+async def update_contact(
+    contact_id: str,
+    body: dict,
+    auth: Dict[str, str] = Depends(get_current_user_company),
+):
+    """Update a contact."""
+    cid = auth["company_id"]
+    r = supabase.table("contacts").update(body).eq("id", contact_id).eq("company_id", cid).execute()
+    if not r.data:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return r.data[0]
+
+
+@router.delete("/{contact_id}")
+async def delete_contact(
+    contact_id: str,
+    auth: Dict[str, str] = Depends(get_current_user_company),
+):
+    """Delete a contact."""
+    cid = auth["company_id"]
+    supabase.table("contacts").delete().eq("id", contact_id).eq("company_id", cid).execute()
+    return {"status": "deleted"}

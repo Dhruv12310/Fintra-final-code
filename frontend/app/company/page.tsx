@@ -54,14 +54,14 @@ export default function CompanyPage() {
             className="text-xs uppercase tracking-[0.5em] mb-4"
             style={{ color: 'var(--text-muted)' }}
           >
-            About Endless
+            About Fintra Finance OS
           </p>
           <h1 className="text-4xl lg:text-5xl font-semibold leading-tight mb-6">
             Modern accounting infrastructure for{' '}
             <span className="text-gradient-neon">growing businesses</span>
           </h1>
           <p className="text-lg leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-            Endless combines traditional accounting principles with AI-powered automation.
+            Fintra Finance OS combines traditional accounting principles with AI-powered automation.
             Manage your chart of accounts, journal entries, and financial reports in one
             unified platform designed for clarity and control.
           </p>

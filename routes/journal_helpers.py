@@ -94,30 +94,6 @@ def create_auto_journal_entry(
         }
         supabase.table("journal_lines").insert(line_data).execute()
 
-        # Update account balance
-        acct_r = supabase.table("accounts")\
-            .select("current_balance, account_type")\
-            .eq("id", line["account_id"])\
-            .single()\
-            .execute()
-
-        if acct_r.data:
-            acct = acct_r.data
-            current_balance = acct.get("current_balance", 0) or 0
-            account_type = acct.get("account_type", "")
-            debit = line.get("debit", 0) or 0
-            credit = line.get("credit", 0) or 0
-
-            if account_type in ("asset", "expense"):
-                new_balance = current_balance + debit - credit
-            else:
-                new_balance = current_balance + credit - debit
-
-            supabase.table("accounts")\
-                .update({"current_balance": new_balance})\
-                .eq("id", line["account_id"])\
-                .execute()
-
     # Now mark as posted (after all lines are inserted)
     supabase.table("journal_entries")\
         .update({"status": "posted"})\

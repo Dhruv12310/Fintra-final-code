@@ -111,7 +111,7 @@ export default function Login() {
             >
               <BarChart3 className="w-6 h-6 text-white" />
             </div>
-            <span className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Endless</span>
+            <span className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Fintra Finance OS</span>
           </div>
           <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Welcome back</h1>
           <p style={{ color: 'var(--text-secondary)' }}>Sign in to your account to continue</p>

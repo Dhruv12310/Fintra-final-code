@@ -609,3 +609,78 @@ Answer with ONLY information from the data above. If data is insufficient, say s
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/financial-summary")
+async def financial_summary(auth: Dict[str, str] = Depends(get_current_user_company)):
+    """
+    Template-based financial summary — works without any external API keys.
+    Pulls account balances, invoice/bill counts, and recent journal activity.
+    """
+    try:
+        company_id = auth["company_id"]
+
+        # Accounts
+        accounts_resp = table("accounts").select("account_type, current_balance").eq("company_id", company_id).execute()
+        accounts = accounts_resp.data or []
+
+        totals: dict = {"asset": 0, "liability": 0, "equity": 0, "revenue": 0, "expense": 0}
+        for a in accounts:
+            t = a.get("account_type", "")
+            if t in totals:
+                totals[t] += float(a.get("current_balance") or 0)
+
+        revenue = totals["revenue"]
+        expense = totals["expense"]
+        net = revenue - expense
+        assets = totals["asset"]
+        liabilities = totals["liability"]
+
+        # Journal entries
+        journals_resp = table("journal_entries").select("status", count="exact").eq("company_id", company_id).execute()
+        journal_count = journals_resp.count or 0
+        draft_count = sum(1 for j in (journals_resp.data or []) if j.get("status") == "draft")
+
+        # Overdue invoices
+        today = datetime.now().strftime("%Y-%m-%d")
+        inv_resp = table("invoices").select("status, total_amount").eq("company_id", company_id).execute()
+        invoices = inv_resp.data or []
+        overdue = [i for i in invoices if i.get("status") not in ("paid", "void") and i.get("due_date", "") and i["due_date"] < today]
+
+        # Build template summary
+        parts = []
+
+        if revenue > 0 or expense > 0:
+            parts.append(f"Revenue ${revenue:,.0f}, expenses ${expense:,.0f} — net ${net:+,.0f}.")
+        else:
+            parts.append("No revenue or expense transactions recorded yet.")
+
+        if assets > 0:
+            parts.append(f"Total assets ${assets:,.0f}, liabilities ${liabilities:,.0f}.")
+
+        if overdue:
+            total_overdue = sum(float(i.get("total_amount") or 0) for i in overdue)
+            parts.append(f"{len(overdue)} overdue invoice{'s' if len(overdue) > 1 else ''} totalling ${total_overdue:,.0f}.")
+
+        if draft_count > 0:
+            parts.append(f"{draft_count} draft journal entr{'ies' if draft_count > 1 else 'y'} pending review.")
+
+        parts.append(f"{journal_count} total journal entries.")
+
+        return {
+            "summary": " ".join(parts),
+            "metrics": {
+                "revenue": revenue,
+                "expense": expense,
+                "net_income": net,
+                "total_assets": assets,
+                "total_liabilities": liabilities,
+                "overdue_invoices": len(overdue),
+                "journal_count": journal_count,
+                "draft_journals": draft_count,
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

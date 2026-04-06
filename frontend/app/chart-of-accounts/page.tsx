@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import {
   Upload,
   Download,
@@ -34,6 +35,8 @@ export default function ChartOfAccounts() {
   const [uploadingCSV, setUploadingCSV] = useState(false)
   const [filter, setFilter] = useState<string>('all')
   const [totalsByType, setTotalsByType] = useState<Record<string, number>>({})
+  const [provisioning, setProvisioning] = useState(false)
+  const [provisionMsg, setProvisionMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     if (companyId) {
@@ -102,6 +105,26 @@ export default function ChartOfAccounts() {
     }
   }
 
+  const handleProvision = async () => {
+    if (!companyId) return
+    setProvisioning(true)
+    setProvisionMsg(null)
+    try {
+      const res = await api.post(`/companies/${companyId}/provision-coa`, {})
+      if (res.status === 'already_provisioned') {
+        setProvisionMsg({ ok: false, text: 'Accounts already exist. If they look empty, refresh the page.' })
+      } else {
+        setProvisionMsg({ ok: true, text: res.message || 'Chart of Accounts set up successfully!' })
+        await fetchAccounts(companyId)
+      }
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail || e?.message || 'Failed to provision.'
+      setProvisionMsg({ ok: false, text: detail })
+    } finally {
+      setProvisioning(false)
+    }
+  }
+
   const handleCSVUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !companyId) return
@@ -166,63 +189,65 @@ export default function ChartOfAccounts() {
 
   if (!companyId) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 dark:bg-slate-950">
-        <Loader2 className="w-8 h-8 text-fuchsia-500 dark:text-fuchsia-300 animate-spin" />
+      <div className="flex items-center justify-center h-screen">
+        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--neon-fuchsia)' }} />
       </div>
     )
   }
 
+  const cardStyle = { backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }
+
   return (
-    <div className="min-h-screen p-8 space-y-6 bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-gray-900 dark:text-slate-100">
+    <div className="min-h-screen p-8 space-y-6" style={{ color: 'var(--text-primary)' }}>
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-gray-600 dark:text-white/60">Ledger structure</p>
-          <h1 className="text-3xl font-semibold text-gray-900 dark:text-white mt-2">Chart of Accounts</h1>
-          <p className="text-gray-600 dark:text-white/60 mt-1">Balances stay synced with every journal entry.</p>
+          <p className="text-xs uppercase tracking-[0.3em]" style={{ color: 'var(--text-muted)' }}>Ledger structure</p>
+          <h1 className="text-3xl font-semibold mt-2">Chart of Accounts</h1>
+          <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>Balances stay synced with every journal entry.</p>
         </div>
         <div className="flex gap-3 flex-wrap">
-          <button onClick={exportToCSV} className="px-4 py-2 rounded-full border border-gray-300 dark:border-white/15 bg-white dark:bg-white/5 text-sm font-medium flex items-center gap-2 text-gray-700 dark:text-white">
+          <button
+            onClick={exportToCSV}
+            className="px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-colors"
+            style={cardStyle}
+          >
             <Download className="w-4 h-4" />
             Export CSV
           </button>
-          <label className="px-4 py-2 rounded-full border border-gray-300 dark:border-white/15 bg-white dark:bg-white/5 text-sm font-medium flex items-center gap-2 cursor-pointer text-gray-700 dark:text-white">
+          <label
+            className="px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 cursor-pointer transition-colors"
+            style={cardStyle}
+          >
             <Upload className="w-4 h-4" />
             {uploadingCSV ? 'Uploading...' : 'Upload CSV'}
-            <input
-              type="file"
-              accept=".csv"
-              onChange={handleCSVUpload}
-              className="hidden"
-              disabled={uploadingCSV}
-            />
+            <input type="file" accept=".csv" onChange={handleCSVUpload} className="hidden" disabled={uploadingCSV} />
           </label>
         </div>
       </div>
 
+      {/* Type totals */}
       <div className="grid md:grid-cols-3 xl:grid-cols-5 gap-4">
         {['asset', 'liability', 'equity', 'revenue', 'expense'].map(type => (
-          <div key={type} className="rounded-3xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-xl p-4 shadow-sm">
-            <p className="text-xs uppercase tracking-widest text-gray-500 dark:text-white/50">{type}</p>
-            <p className="text-2xl font-semibold text-gray-900 dark:text-white mt-2">
-              ${(totalsByType[type] || 0).toLocaleString()}
-            </p>
-            <p className="text-gray-500 dark:text-white/40 text-xs mt-1">Current balance</p>
+          <div key={type} className="rounded-3xl p-4" style={cardStyle}>
+            <p className="text-xs uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>{type}</p>
+            <p className="text-2xl font-semibold mt-2">${(totalsByType[type] || 0).toLocaleString()}</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Current balance</p>
           </div>
         ))}
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex gap-2 border-b border-gray-200 dark:border-white/10 overflow-x-auto">
+      <div className="flex gap-2 overflow-x-auto" style={{ borderBottom: '1px solid var(--border-color)' }}>
         {['all', 'asset', 'liability', 'equity', 'revenue', 'expense'].map(type => (
           <button
             key={type}
             onClick={() => setFilter(type)}
-            className={`px-4 py-2 text-sm font-semibold border-b-2 transition-colors ${
-              filter === type
-                ? 'border-fuchsia-500 text-gray-900 dark:text-white'
-                : 'border-transparent text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white'
-            }`}
+            className="px-4 py-2 text-sm font-semibold border-b-2 transition-colors"
+            style={{
+              borderColor: filter === type ? 'var(--neon-fuchsia)' : 'transparent',
+              color: filter === type ? 'var(--text-primary)' : 'var(--text-muted)',
+            }}
           >
             {type.charAt(0).toUpperCase() + type.slice(1)}
           </button>
@@ -231,13 +256,16 @@ export default function ChartOfAccounts() {
 
       {/* Accounts Tree */}
       {loading ? (
-        <div className="text-center py-12">
-          <Loader2 className="w-8 h-8 text-gray-400 dark:text-white/60 animate-spin mx-auto" />
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--text-muted)' }} />
         </div>
       ) : (
-        <div className="rounded-3xl border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 backdrop-blur-xl overflow-hidden shadow-lg">
+        <div className="rounded-3xl overflow-hidden" style={cardStyle}>
           {/* Table Header */}
-          <div className="grid grid-cols-12 gap-4 px-6 py-4 border-b border-gray-200 dark:border-white/10 text-xs font-semibold text-gray-600 dark:text-white/60 uppercase tracking-wide bg-gray-50 dark:bg-transparent">
+          <div
+            className="grid grid-cols-12 gap-4 px-6 py-4 text-xs font-semibold uppercase tracking-wide"
+            style={{ borderBottom: '1px solid var(--border-color)', color: 'var(--text-muted)', backgroundColor: 'var(--bg-secondary)' }}
+          >
             <div className="col-span-1">Code</div>
             <div className="col-span-4">Account Name</div>
             <div className="col-span-2">Type</div>
@@ -246,80 +274,59 @@ export default function ChartOfAccounts() {
             <div className="col-span-1"></div>
           </div>
 
-          {/* Accounts */}
           {filteredAccounts.length > 0 ? (
-            <div className="divide-y divide-gray-200 dark:divide-white/10">
+            <div>
               {filteredAccounts.map(account => (
-                <div key={account.id}>
+                <div key={account.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
                   {/* Parent Account */}
-                  <div className="grid grid-cols-12 gap-4 px-6 py-4 hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
-                    <div className="col-span-1 font-mono text-sm text-gray-900 dark:text-white">{account.code}</div>
+                  <div className="grid grid-cols-12 gap-4 px-6 py-4 transition-colors hover:opacity-90">
+                    <div className="col-span-1 font-mono text-sm">{account.code}</div>
                     <div className="col-span-4 flex items-center gap-2">
                       {account.children && account.children.length > 0 && (
-                        <button
-                          onClick={() => toggleExpand(account.id)}
-                          className="text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white transition-colors"
-                        >
-                          {account.isExpanded ? (
-                            <ChevronDown className="w-4 h-4" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4" />
-                          )}
+                        <button onClick={() => toggleExpand(account.id)} style={{ color: 'var(--text-muted)' }}>
+                          {account.isExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
                         </button>
                       )}
-                      <span className="font-medium text-gray-900 dark:text-white">{account.name}</span>
+                      <Link href={`/chart-of-accounts/${account.id}`} className="font-medium hover:underline" style={{ color: 'var(--neon-cyan)' }}>
+                        {account.name}
+                      </Link>
                     </div>
                     <div className="col-span-2">
-                      <span className="inline-flex px-2 py-1 rounded-lg text-xs font-medium bg-gray-100 dark:bg-white/10 border border-gray-300 dark:border-white/15 text-gray-700 dark:text-white">
+                      <span className="inline-flex px-2 py-1 rounded-lg text-xs font-medium" style={{ border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
                         {account.type.charAt(0).toUpperCase() + account.type.slice(1)}
                       </span>
                     </div>
-                    <div className="col-span-2 text-sm text-gray-600 dark:text-white/70">
-                      {account.subtype
-                        ? account.subtype.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-                        : '—'}
+                    <div className="col-span-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                      {account.subtype ? account.subtype.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : '—'}
                     </div>
-                    <div className="col-span-2 text-right font-medium text-gray-900 dark:text-white">
-                      ${account.balance.toLocaleString()}
-                    </div>
+                    <div className="col-span-2 text-right font-medium">${account.balance.toLocaleString()}</div>
                     <div className="col-span-1 flex justify-end gap-2">
-                      <button className="text-gray-500 dark:text-white/50 hover:text-gray-900 dark:hover:text-white">
-                        <Edit className="w-4 h-4" />
-                      </button>
-                      <button className="text-gray-500 dark:text-white/50 hover:text-rose-500 dark:hover:text-rose-300">
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <button style={{ color: 'var(--text-muted)' }}><Edit className="w-4 h-4" /></button>
+                      <button style={{ color: 'var(--text-muted)' }}><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </div>
 
                   {/* Child Accounts */}
                   {account.isExpanded && account.children?.map(child => (
-                    <div
-                      key={child.id}
-                      className="grid grid-cols-12 gap-4 px-6 py-3 bg-gray-50 dark:bg-white/5 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"
-                    >
-                      <div className="col-span-1 font-mono text-sm text-gray-700 dark:text-white/70 pl-8">{child.code}</div>
-                      <div className="col-span-4 pl-8 text-sm text-gray-800 dark:text-white/85">{child.name}</div>
+                    <div key={child.id} className="grid grid-cols-12 gap-4 px-6 py-3 transition-colors" style={{ backgroundColor: 'var(--bg-secondary)', borderTop: '1px solid var(--border-color)' }}>
+                      <div className="col-span-1 font-mono text-sm pl-8" style={{ color: 'var(--text-muted)' }}>{child.code}</div>
+                      <div className="col-span-4 pl-8 text-sm">
+                        <Link href={`/chart-of-accounts/${child.id}`} className="hover:underline" style={{ color: 'var(--neon-cyan)' }}>
+                          {child.name}
+                        </Link>
+                      </div>
                       <div className="col-span-2">
-                        <span className="inline-flex px-2 py-1 rounded-lg text-xs font-medium bg-gray-100 dark:bg-white/10 border border-gray-300 dark:border-white/15 text-gray-700 dark:text-white">
+                        <span className="inline-flex px-2 py-1 rounded-lg text-xs font-medium" style={{ border: '1px solid var(--border-color)', background: 'var(--bg-card)', color: 'var(--text-secondary)' }}>
                           {child.type.charAt(0).toUpperCase() + child.type.slice(1)}
                         </span>
                       </div>
-                      <div className="col-span-2 text-sm text-gray-600 dark:text-white/60">
-                        {child.subtype
-                          ? child.subtype.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
-                          : '—'}
+                      <div className="col-span-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+                        {child.subtype ? child.subtype.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) : '—'}
                       </div>
-                      <div className="col-span-2 text-right text-sm font-medium text-gray-800 dark:text-white/80">
-                        ${child.balance.toLocaleString()}
-                      </div>
+                      <div className="col-span-2 text-right text-sm font-medium">${child.balance.toLocaleString()}</div>
                       <div className="col-span-1 flex justify-end gap-2">
-                        <button className="text-gray-400 dark:text-white/40 hover:text-gray-900 dark:hover:text-white">
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button className="text-gray-400 dark:text-white/40 hover:text-rose-500 dark:hover:text-rose-300">
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <button style={{ color: 'var(--text-muted)' }}><Edit className="w-4 h-4" /></button>
+                        <button style={{ color: 'var(--text-muted)' }}><Trash2 className="w-4 h-4" /></button>
                       </div>
                     </div>
                   ))}
@@ -327,30 +334,53 @@ export default function ChartOfAccounts() {
               ))}
             </div>
           ) : (
-            <div className="text-center py-12 text-gray-600 dark:text-white/60">
-              <FolderTree className="w-12 h-12 mx-auto mb-3 text-gray-400 dark:text-white/30" />
-              <p>No accounts found</p>
-              <p className="text-sm mt-1">Upload a CSV or create your first account</p>
+            <div className="text-center py-12">
+              <FolderTree className="w-12 h-12 mx-auto mb-3 opacity-30" style={{ color: 'var(--text-muted)' }} />
+              <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>No accounts found</p>
+              <p className="text-sm mt-1 mb-5" style={{ color: 'var(--text-muted)' }}>
+                Auto-provision from your industry template, or upload a CSV.
+              </p>
+              {provisionMsg && (
+                <div
+                  className="mx-auto max-w-sm mb-4 px-4 py-2.5 rounded-xl text-sm font-medium"
+                  style={{
+                    background: provisionMsg.ok ? 'rgba(52,211,153,0.1)' : 'rgba(248,113,113,0.1)',
+                    border: `1px solid ${provisionMsg.ok ? 'rgba(52,211,153,0.3)' : 'rgba(248,113,113,0.3)'}`,
+                    color: provisionMsg.ok ? 'var(--neon-emerald)' : '#f87171',
+                  }}
+                >
+                  {provisionMsg.text}
+                </div>
+              )}
+              <button
+                onClick={handleProvision}
+                disabled={provisioning}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-semibold text-white disabled:opacity-50 transition hover:opacity-90"
+                style={{ background: 'linear-gradient(135deg, var(--neon-cyan), var(--neon-fuchsia))' }}
+              >
+                {provisioning
+                  ? <><Loader2 className="w-4 h-4 animate-spin" /> Setting up…</>
+                  : <><FolderTree className="w-4 h-4" /> Set up Chart of Accounts</>}
+              </button>
+              <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
+                Uses the industry you set in your company profile
+              </p>
             </div>
           )}
         </div>
       )}
 
-      {/* CSV Upload Instructions */}
-      <div className="relative overflow-hidden rounded-3xl border border-gray-200 dark:border-white/10 bg-gradient-to-r from-gray-50 to-white dark:from-slate-900/80 dark:to-slate-900/40 p-6 shadow-lg">
-        <div className="absolute inset-y-0 right-0 w-1/3 bg-gradient-to-l from-fuchsia-500/5 dark:from-fuchsia-500/10 to-transparent pointer-events-none" />
+      {/* CSV format info */}
+      <div className="relative overflow-hidden rounded-3xl p-6" style={cardStyle}>
+        <div className="absolute inset-y-0 right-0 w-1/3 pointer-events-none" style={{ background: 'linear-gradient(to left, rgba(217,70,239,0.05), transparent)' }} />
         <div className="relative space-y-3">
-          <p className="text-xs uppercase tracking-[0.35em] text-gray-600 dark:text-white/60">CSV format</p>
-          <h3 className="text-2xl font-semibold text-gray-900 dark:text-white">Import your ledger structure</h3>
-          <p className="text-sm text-gray-700 dark:text-white/70">
-            Keep columns in this order so every account lands in the right place.
-          </p>
-          <code className="block w-full rounded-2xl border border-gray-300 dark:border-white/15 bg-gray-100 dark:bg-white/5 px-4 py-3 font-mono text-sm text-gray-900 dark:text-white">
+          <p className="text-xs uppercase tracking-[0.35em]" style={{ color: 'var(--text-muted)' }}>CSV format</p>
+          <h3 className="text-xl font-semibold">Import your ledger structure</h3>
+          <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>Keep columns in this order so every account lands in the right place.</p>
+          <code className="block w-full rounded-2xl px-4 py-3 font-mono text-sm" style={{ border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
             Account Code, Account Name, Type, Subtype, Opening Balance
           </code>
-          <p className="text-xs text-gray-600 dark:text-white/50">
-            Supported types: asset, liability, equity, revenue, expense
-          </p>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Supported types: asset, liability, equity, revenue, expense</p>
         </div>
       </div>
     </div>

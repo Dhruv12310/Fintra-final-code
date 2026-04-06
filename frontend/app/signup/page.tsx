@@ -119,7 +119,7 @@ export default function Signup() {
             >
               <BarChart3 className="w-6 h-6 text-white" />
             </div>
-            <span className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Endless</span>
+            <span className="text-3xl font-bold" style={{ color: 'var(--text-primary)' }}>Fintra Finance OS</span>
           </div>
           <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Create your account</h1>
           <p style={{ color: 'var(--text-secondary)' }}>Start managing your finances with AI</p>

@@ -1,6 +1,6 @@
-# Endless — AI-Powered Accounting Platform
+# Fintra Finance OS
 
-Full-stack accounting with double-entry bookkeeping, Supabase auth, and optional AI (OpenAI). Backend: FastAPI. Frontend: Next.js 14 (App Router) + Tailwind.
+Full-stack AI-powered accounting platform with double-entry bookkeeping, Plaid bank feeds, customizable dashboard widgets, and an AI copilot. Backend: FastAPI. Frontend: Next.js 14 (App Router) + Tailwind CSS.
 
 ---
 
@@ -14,11 +14,11 @@ python3 -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 cp .env.example .env
-# Edit .env: SUPABASE_URL, SUPABASE_KEY; optional: SUPABASE_JWT_SECRET, OPENAI_API_KEY
-uvicorn main:app --reload --port 8000
+# Fill in SUPABASE_URL, SUPABASE_KEY, PLAID_CLIENT_ID, PLAID_SECRET, OPENAI_API_KEY
+uvicorn main:app --reload --port 8001
 ```
 
-API: **http://127.0.0.1:8000** · Docs: **http://127.0.0.1:8000/docs**
+API: **http://127.0.0.1:8001** · Docs: **http://127.0.0.1:8001/docs**
 
 ### Frontend
 
@@ -26,7 +26,7 @@ API: **http://127.0.0.1:8000** · Docs: **http://127.0.0.1:8000/docs**
 cd frontend
 npm install
 cp .env.local.example .env.local
-# Edit .env.local: NEXT_PUBLIC_API_BASE, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Fill in NEXT_PUBLIC_API_BASE, NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY
 npm run dev
 ```
 
@@ -34,23 +34,19 @@ App: **http://localhost:3000**
 
 ### Database
 
-**For this branch, the canonical schema is `newschema.sql`** — merged schema with COA, banking, AR/AP, reconciliation, period close, and fixed triggers. Apply in Supabase SQL Editor or via `psql`:
+Apply the canonical schema first, then all migrations in order:
 
 ```bash
+# 1. Base schema (Supabase SQL Editor or psql)
 psql $DATABASE_URL -f newschema.sql
-```
 
-Then apply migrations in order:
-
-```bash
+# 2. Migrations (run each in order)
 psql $DATABASE_URL -f migrations/004_seed_coa_templates.sql
 psql $DATABASE_URL -f migrations/005_report_functions.sql
+psql $DATABASE_URL -f migrations/006_add_legal_customer_fields.sql
+psql $DATABASE_URL -f migrations/007_dashboard_widgets.sql
+psql $DATABASE_URL -f migrations/008_plaid_banking.sql
 ```
-
-- **`migrations/004_seed_coa_templates.sql`** — Seeds 12 industry COA templates (SaaS, Retail, Healthcare, etc.) and shared base accounts. Idempotent; safe to re-run.
-- **`migrations/005_report_functions.sql`** — Creates PostgreSQL RPC functions used by the Reports API (`rpt_trial_balance`, `rpt_account_balances_as_of`, `rpt_account_balances_between`).
-
-Alternatively: `supabase_schema.sql` plus `migrations/002_*`, `migrations/003_*`. See **MIGRATION_GUIDE.md** for full steps.
 
 ---
 
@@ -58,78 +54,10 @@ Alternatively: `supabase_schema.sql` plus `migrations/002_*`, `migrations/003_*`
 
 | Layer    | Tech |
 |----------|------|
-| Backend  | FastAPI, Uvicorn, python-dotenv, Supabase Python SDK, python-jose (JWT), OpenAI (optional) |
-| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS, Supabase JS (auth), Axios, Recharts, Framer Motion, @react-pdf/renderer, Lucide icons |
-| Data     | Supabase (PostgreSQL + Auth) |
-
----
-
-## Project Structure
-
-```
-endless/
-├── main.py                      # FastAPI app, CORS, route includes
-├── database.py                  # Supabase client / table helpers
-├── smart_parser.py              # OCR / receipt parsing
-├── start.sh                     # Production start script (Railway: reads PORT)
-├── requirements.txt             # Dev dependencies
-├── requirements.production.txt  # Production dependencies (lighter OCR)
-├── .env.example                 # Backend env template — copy to .env
-├── newschema.sql                # Canonical merged schema (use this for this branch)
-├── supabase_schema.sql          # Legacy / alternate schema
-├── migrations/
-│   ├── 004_seed_coa_templates.sql   # 12 industry COA templates
-│   └── 005_report_functions.sql     # PostgreSQL RPC functions for reports
-├── routes/
-│   ├── journal_helpers.py       # Shared: auto-journal creation, AR/AP account lookup
-│   ├── users.py                 # /users — CRUD, link to company
-│   ├── companies.py             # /companies — CRUD, onboarding, auto COA provision
-│   ├── accounts.py              # /accounts — Chart of Accounts
-│   ├── journals.py              # /journals — Journal entries (double-entry)
-│   ├── dashboard.py             # /dashboard — Dashboard aggregates
-│   ├── ai_insights.py           # /ai-insights — AI-generated insights
-│   ├── ai_research.py           # /ai/research — Market benchmarks (Perplexity)
-│   ├── ai_overlook.py           # /ai — Expense validation (OpenAI)
-│   ├── expenses.py              # /expenses — Expense entries
-│   ├── parser.py                # /parse — Receipt/file OCR parsing
-│   ├── coa_templates.py         # /coa-templates — Industry COA templates
-│   ├── banking.py               # /bank — Banking / transactions
-│   ├── contacts.py              # /contacts — Vendors and customers
-│   ├── invoices.py              # /invoices — Invoices with auto-journal on post
-│   ├── payments.py              # /payments — Payments with auto-journal on apply
-│   ├── bills.py                 # /bills — Bills with auto-journal on post
-│   ├── bill_payments.py         # /bill-payments — Bill payments with auto-journal on apply
-│   ├── accounting_periods.py    # /accounting-periods — Period management
-│   ├── reconciliation.py        # /reconciliation — Bank reconciliation
-│   ├── reports.py               # /reports — Trial Balance, P&L, Balance Sheet, Cash Flow
-│   └── documents.py             # /documents — Document storage
-└── frontend/
-    ├── app/                     # Next.js App Router pages
-    │   ├── layout.tsx
-    │   ├── page.tsx
-    │   ├── login/               # Supabase login
-    │   ├── signup/              # Supabase signup
-    │   ├── auth/callback/       # Supabase auth callback
-    │   ├── onboarding/          # Company setup (industry → auto-provisions COA)
-    │   ├── new-dashboard/       # Main dashboard
-    │   ├── banking/             # Banking / transactions
-    │   ├── new-journals/        # Journal entries with delete support
-    │   ├── chart-of-accounts/   # Chart of Accounts
-    │   ├── invoices/            # Full invoice create/post/track UI
-    │   ├── bills/               # Full bill create/post/track UI
-    │   ├── reports/             # Financial reports with print + PDF export
-    │   ├── month-end/           # Period close / month-end
-    │   ├── ai/                  # Ask AI / market research
-    │   ├── profile/             # User + company profile
-    │   ├── company/             # Company settings
-    │   └── documents/           # Document list
-    ├── components/
-    │   ├── AppLayout.tsx        # Layout with print-safe chrome hiding
-    │   ├── ReportPDF.tsx        # PDF templates for all 4 financial reports
-    │   └── ...                  # Sidebar, shared UI
-    ├── contexts/                # AuthContext, ThemeContext
-    └── lib/                     # API client, Supabase client
-```
+| Backend  | FastAPI, Uvicorn, python-dotenv, Supabase Python SDK, python-jose (JWT), plaid-python v38, OpenAI |
+| Frontend | Next.js 14 (App Router), TypeScript, Tailwind CSS, Supabase JS, Axios, Recharts, react-plaid-link, Lucide icons |
+| Data     | Supabase (PostgreSQL + Auth + RLS) |
+| Banking  | Plaid (Sandbox / Production) — transactions, auth |
 
 ---
 
@@ -140,43 +68,109 @@ endless/
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SUPABASE_URL` | Yes | Supabase project URL |
-| `SUPABASE_KEY` | Yes | Service role key (backend only — never expose to frontend) |
-| `SUPABASE_JWT_SECRET` | No | JWT secret for local token validation (Project Settings → API) |
+| `SUPABASE_KEY` | Yes | Service role key (backend only) |
+| `SUPABASE_JWT_SECRET` | No | JWT secret for local token validation |
 | `OPENAI_API_KEY` | No | OpenAI for AI insights and expense validation |
-| `PERPLEXITY_API_KEY` | No | Perplexity for `/ai/research` market benchmarks |
+| `PERPLEXITY_API_KEY` | No | Perplexity for market benchmarks |
+| `PLAID_CLIENT_ID` | Yes (banking) | Plaid client ID |
+| `PLAID_SECRET` | Yes (banking) | Plaid sandbox or production secret |
+| `PLAID_ENV` | Yes (banking) | `sandbox`, `development`, or `production` |
 
-**Frontend (`.env.local`)** — copy from `frontend/.env.local.example`:
+**Frontend (`.env.local`)**:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `NEXT_PUBLIC_SUPABASE_URL` | Yes | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key (safe for frontend) |
-| `NEXT_PUBLIC_API_BASE` | Yes | Backend base URL (e.g. `http://localhost:8000`) |
-| `NEXT_PUBLIC_DEMO_MODE` | No | Set to `true` to skip auth (demo) |
-| `NEXT_PUBLIC_COMPANY_ID` | No | Pre-fill company UUID for local dev |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Yes | Supabase anon key |
+| `NEXT_PUBLIC_API_BASE` | Yes | Backend base URL (e.g. `http://localhost:8001`) |
 
-**Never commit `.env` or `frontend/.env.local`.** Use `.env.example` and `frontend/.env.local.example` as templates.
+**Never commit `.env` or `.env.local`.**
 
 ---
 
-## Frontend Modules (Current UI)
+## Project Structure
 
-| Route | Purpose |
-|-------|---------|
+```
+endless/
+├── main.py                        # FastAPI app, CORS, route registration
+├── database.py                    # Supabase client
+├── newschema.sql                  # Canonical merged schema — use this
+├── migrations/
+│   ├── 004_seed_coa_templates.sql     # 12 industry COA templates
+│   ├── 005_report_functions.sql       # PostgreSQL RPC functions for reports
+│   ├── 006_add_legal_customer_fields.sql  # Legal + customer contact columns
+│   ├── 007_dashboard_widgets.sql      # Per-user dashboard widget preferences
+│   └── 008_plaid_banking.sql          # sync_cursor + balance columns for banking
+├── routes/
+│   ├── journal_helpers.py         # Shared auto-journal creation, AR/AP lookup
+│   ├── users.py                   # /users
+│   ├── companies.py               # /companies — onboarding, COA auto-provision
+│   ├── accounts.py                # /accounts — Chart of Accounts
+│   ├── journals.py                # /journals — double-entry journal entries
+│   ├── dashboard.py               # /dashboard — metrics, widgets, bank accounts
+│   ├── banking.py                 # /bank — Plaid link, sync, transactions, post to journal
+│   ├── contacts.py                # /contacts — vendors and customers
+│   ├── invoices.py                # /invoices — AR invoices with auto-journal
+│   ├── bills.py                   # /bills — AP bills with auto-journal
+│   ├── payments.py                # /payments — AR payments with auto-journal
+│   ├── bill_payments.py           # /bill-payments — AP payments with auto-journal
+│   ├── reports.py                 # /reports — Trial Balance, P&L, Balance Sheet, Cash Flow
+│   ├── ai_overlook.py             # /ai — AI expense validation (OpenAI)
+│   ├── ai_insights.py             # /ai-insights — AI financial insights
+│   └── ...
+└── frontend/
+    ├── app/
+    │   ├── layout.tsx
+    │   ├── page.tsx               # Landing / redirect
+    │   ├── login/ signup/         # Supabase auth
+    │   ├── onboarding/            # 3-step wizard → auto-provisions COA
+    │   ├── new-dashboard/         # Customizable widget dashboard
+    │   ├── banking/               # Plaid bank feed, transactions, post to journal
+    │   ├── chart-of-accounts/     # COA viewer + detail pages
+    │   ├── contacts/              # Vendors and customers
+    │   ├── invoices/ bills/       # AR/AP with post workflow
+    │   ├── payments/              # Payment tracking
+    │   ├── reports/               # Financial reports + PDF export
+    │   ├── month-end/             # Period close workflow
+    │   ├── ai/                    # Ask Fintra AI + market research
+    │   └── profile/               # Company + user profile (QuickBooks-style inline edit)
+    ├── components/
+    │   ├── dashboard/
+    │   │   ├── widgets.tsx        # 16-widget catalog with all widget components
+    │   │   ├── WidgetGrid.tsx     # 2-col grid with scroll-reveal animation
+    │   │   ├── AddWidgetModal.tsx # Checkbox modal to customize dashboard
+    │   │   └── BankAccountsCard.tsx  # Permanent bank accounts summary card
+    │   ├── NewSidebar.tsx
+    │   ├── EnhancedAIConsole.tsx  # Fintra Copilot chat panel
+    │   └── AskAIButton.tsx        # Floating "Ask Fintra AI" button
+    ├── hooks/
+    │   ├── useScrollReveal.ts     # IntersectionObserver — fade-in on scroll
+    │   └── useCountUp.ts          # Cubic ease-out animated number counter
+    ├── lib/
+    │   ├── api.ts                 # Axios API client
+    │   └── chartColors.ts         # CSS-variable-aware chart color helper
+    └── contexts/                  # AuthContext, ThemeContext
+```
+
+---
+
+## Frontend Pages
+
+| Route | Description |
+|-------|-------------|
 | `/login`, `/signup` | Supabase auth |
-| `/onboarding` | Company setup — industry selection triggers automatic COA provisioning |
-| `/new-dashboard` | Main dashboard with key metrics |
-| `/banking` | Banking / transactions |
-| `/new-journals` | Journal entries — create, view, delete; debits must equal credits |
-| `/chart-of-accounts` | Chart of Accounts viewer |
-| `/invoices` | Create invoices, map revenue accounts per line, post (triggers auto-journal) |
-| `/bills` | Create bills, map expense accounts per line, post (triggers auto-journal) |
-| `/reports` | Trial Balance, P&L, Balance Sheet, Cash Flow — with PDF export and browser print |
+| `/onboarding` | 3-step company setup — industry selection auto-provisions COA |
+| `/new-dashboard` | Customizable widget dashboard with KPI count-up animations |
+| `/banking` | Plaid bank feed — link accounts, review transactions, post to journal |
+| `/chart-of-accounts` | Chart of Accounts with account detail drill-down |
+| `/contacts` | Vendors and customers |
+| `/invoices` | AR invoices — create, post, track |
+| `/bills` | AP bills — create, post, track |
+| `/payments` | Payment tracking |
+| `/reports` | Trial Balance, P&L, Balance Sheet, Cash Flow — with PDF export |
 | `/month-end` | Period close / month-end workflow |
-| `/ai` | Ask AI / market research (Perplexity) |
-| `/profile` | User and company profile settings |
-| `/company` | Company settings |
-| `/documents` | Document storage list |
+| `/ai` | Ask Fintra AI + market research |
+| `/profile` | Company profile — QuickBooks-style inline editing |
 
 ---
 
@@ -184,124 +178,167 @@ endless/
 
 ### Core
 
-| Area | Prefix | Key Endpoints |
-|------|--------|---------------|
-| Users | `/users` | CRUD, link to company |
-| Companies | `/companies` | CRUD, onboarding; auto-provisions COA on `onboarding_completed=true` |
-| Accounts | `/accounts` | Chart of Accounts CRUD |
-| Journals | `/journals` | Create / list / delete journal entries; balance validated; auto-reverses balances on delete |
-| COA Templates | `/coa-templates` | List industry templates; `GET /coa-templates/{id}/accounts` |
-| Contacts | `/contacts` | Vendors and customers |
+| Area | Prefix | Notes |
+|------|--------|-------|
+| Users | `/users` | CRUD, company link |
+| Companies | `/companies` | PATCH passes through any field; `onboarding_completed=true` triggers COA provisioning |
+| Accounts | `/accounts` | Full COA CRUD |
+| Journals | `/journals` | Create/list/delete; balance enforced |
+| Contacts | `/contacts` | Vendors + customers |
+| COA Templates | `/coa-templates` | 12 industry templates |
 
-### AR / AP
+### AR / AP (Auto-Journal)
 
-| Area | Prefix | Key Behavior |
-|------|--------|--------------|
-| Invoices | `/invoices` | Create, list, update status; **posting auto-creates DR AR / CR Revenue journal entry** |
-| Payments | `/payments` | Create, apply to invoice; **applying auto-creates DR Cash / CR AR journal entry** |
-| Bills | `/bills` | Create, list, update status; **posting auto-creates DR Expense / CR AP journal entry** |
-| Bill Payments | `/bill-payments` | Create, apply to bills; **applying auto-creates DR AP / CR Cash journal entry** |
+| Area | Prefix | Auto-Journal Trigger |
+|------|--------|----------------------|
+| Invoices | `/invoices` | Post → DR Accounts Receivable / CR Revenue |
+| Payments | `/payments` | Apply → DR Cash / CR Accounts Receivable |
+| Bills | `/bills` | Post → DR Expense / CR Accounts Payable |
+| Bill Payments | `/bill-payments` | Apply → DR Accounts Payable / CR Cash |
+
+### Banking (Plaid)
+
+| Endpoint | Description |
+|----------|-------------|
+| `POST /bank/plaid/link-token` | Generate Plaid Link token |
+| `POST /bank/plaid/exchange-token` | Exchange public token → access token, import accounts, initial sync |
+| `POST /bank/plaid/sync/{connection_id}` | Manual sync + balance refresh |
+| `DELETE /bank/connections/{id}` | Remove Plaid item + delete from DB |
+| `GET /bank/accounts` | Linked accounts with pending transaction count |
+| `GET /bank/transactions` | Filter by status/account/search/date |
+| `PATCH /bank/transactions/{id}` | Update category / memo |
+| `POST /bank/transactions/{id}/post` | Create journal entry, mark reviewed |
+| `POST /bank/transactions/{id}/exclude` | Exclude from review queue |
+| `GET /bank/gl-accounts` | GL accounts for category dropdown |
+
+### Dashboard
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /dashboard/summary?period=&widgets=` | KPI metrics + per-widget data |
+| `GET /dashboard/bank-accounts` | Cash/bank GL accounts with balances |
+| `GET /dashboard/widgets` | Load saved widget preferences |
+| `PUT /dashboard/widgets` | Save widget preferences |
 
 ### Reports
 
 | Endpoint | Description |
 |----------|-------------|
-| `GET /reports/trial-balance?as_of_date=YYYY-MM-DD` | Per-account debit/credit totals as of date |
-| `GET /reports/profit-loss?start_date=…&end_date=…` | P&L with COGS / Operating / Other breakdown |
-| `GET /reports/balance-sheet?as_of_date=…` | Balance Sheet: Assets = Liabilities + Equity |
-| `GET /reports/cash-flow?start_date=…&end_date=…` | Cash flow from operating activities |
+| `GET /reports/trial-balance?as_of_date=` | Per-account debit/credit totals |
+| `GET /reports/profit-loss?start_date=&end_date=` | P&L with COGS / Operating breakdown |
+| `GET /reports/balance-sheet?as_of_date=` | Assets = Liabilities + Equity |
+| `GET /reports/cash-flow?start_date=&end_date=` | Cash flow from operations |
 
-All report endpoints use PostgreSQL RPC functions (`rpt_*`) from migration 005.
+---
 
-### Other
+## Dashboard Widget System
 
-| Area | Prefix | Description |
-|------|--------|-------------|
-| Dashboard | `/dashboard` | Aggregated dashboard metrics |
-| AI Insights | `/ai-insights` | AI-generated financial insights (OpenAI) |
-| AI Research | `/ai/research` | Market benchmarks (Perplexity) |
-| AI Overlook | `/ai` | Expense validation (OpenAI) |
-| Expenses | `/expenses` | Expense entries |
-| Parser | `/parse` | Receipt / file OCR parsing |
-| Banking | `/bank` | Banking data |
-| Accounting Periods | `/accounting-periods` | Period management |
-| Reconciliation | `/reconciliation` | Bank reconciliation |
-| Documents | `/documents` | Document storage |
+The dashboard supports **16 configurable widgets**. Preferences are stored per-user in the `dashboard_widgets` Supabase table (migration 007).
 
-Health: `GET /`, `GET /health`, `GET /status/healthz`.
+**Default widgets:** Revenue, Expenses, Net Income, Cash Balance, AR Aging, AP Aging
+
+**All available widgets:** Revenue, Expenses, Net Income, Cash Balance, AR Aging, AP Aging, Invoice Status, Bill Status, Cash Flow, Top Expenses, Revenue by Customer, Recent Journal Entries, Account Balances, Deposits, Burn Rate, Gross Margin
+
+Widgets are added/removed via the **Add Widget** button → checkbox modal → saved to DB.
+
+---
+
+## Plaid Bank Feed
+
+### How it works
+
+1. Click **Link Account** → Plaid Link modal opens
+2. Select bank → authenticate with bank credentials
+3. Backend exchanges public token for access token, imports accounts
+4. Transactions sync via cursor-based `/transactions/sync`
+5. Review transactions in **Pending** tab — assign GL category
+6. **Post to Journal** → creates balanced double-entry journal entry:
+   - Outflow (expense): DR Category Account / CR Bank GL Account
+   - Inflow (revenue): DR Bank GL Account / CR Category Account
+7. Transaction moves to **Posted** tab
+
+### Sandbox credentials (testing)
+
+- Username: `user_good`
+- Password: `pass_good`
+
+### Important notes for Plaid SDK v38
+
+- Do NOT pass `Products("balance")` — it is auto-initialized and will throw `INVALID_PRODUCT`
+- Use URL strings for environment, NOT `plaid.Environment.*` enum (removed in v38):
+  ```python
+  host="https://sandbox.plaid.com"   # correct
+  host=plaid.Environment.Sandbox     # broken in v38
+  ```
 
 ---
 
 ## Auto-Journal Entry System
 
-When AR/AP transactions change status, the backend **automatically creates balanced, posted journal entries** and links them back to the source document (`linked_journal_entry_id`).
+Journal entries are created automatically when AR/AP documents change status. The shared helper is `routes/journal_helpers.py`.
 
 | Trigger | Debit | Credit |
 |---------|-------|--------|
 | Invoice posted | Accounts Receivable | Revenue (per line) |
-| Payment applied to invoice | Cash / Bank (deposit account) | Accounts Receivable |
+| Payment applied | Cash / Deposit Account | Accounts Receivable |
 | Bill posted | Expense (per line) | Accounts Payable |
-| Bill payment applied | Accounts Payable | Cash / Bank (payment account) |
+| Bill payment applied | Accounts Payable | Cash / Payment Account |
+| Bank transaction posted | Category Account or Bank | Bank Account or Category |
 
-**Requirements:**
-- Each invoice line must have a `revenue_account_id` before posting.
-- Each bill line must have an `expense_account_id` before posting.
-- Payments must have a `deposit_account_id`; bill payments must have a `payment_account_id`.
-- The company's COA must have accounts with subtypes `accounts_receivable` and `accounts_payable`.
-
-The shared helper lives in `routes/journal_helpers.py` (`create_auto_journal_entry`, `get_ar_account`, `get_ap_account`).
+**Important:** Journal entries are created as `draft`, lines are inserted, then status is updated to `posted`. This is required because the DB trigger `prevent_edit_posted_journal_lines` blocks inserts/updates on lines belonging to posted entries.
 
 ---
 
 ## COA Auto-Provisioning
 
-When a company completes onboarding (`onboarding_completed=true`), the backend automatically:
+When a company completes onboarding with `onboarding_completed=true`, the backend:
 
-1. Looks up the COA template matching the company's `industry` field.
-2. Falls back to the "Other" template if no exact match is found.
-3. Inserts all template accounts into the company's Chart of Accounts.
-4. Sets `coa_template_id` on the company record.
+1. Matches `industry` to one of 12 COA templates
+2. Falls back to "Other" template if no match
+3. Inserts all template accounts into the company's Chart of Accounts
+4. Sets `coa_template_id` on the company record
 
-12 industry templates are available: SaaS / Software, E-commerce / Retail, Professional Services, Healthcare, Manufacturing, Food & Beverage, Real Estate, Construction, Marketing / Advertising, Education, Consulting, Other.
-
-Template seeding: `migrations/004_seed_coa_templates.sql` (idempotent).
+**12 templates:** SaaS / Software, E-commerce / Retail, Professional Services, Healthcare, Manufacturing, Food & Beverage, Real Estate, Construction, Marketing / Advertising, Education, Consulting, Other.
 
 ---
 
-## Financial Reports
+## Onboarding Wizard
 
-Reports are powered by PostgreSQL functions called via `supabase.rpc()`:
+3-step wizard at `/onboarding`:
 
-| RPC Function | Used By |
-|---|---|
-| `rpt_trial_balance(company_id, as_of_date)` | Trial Balance |
-| `rpt_account_balances_as_of(company_id, as_of_date)` | Balance Sheet |
-| `rpt_account_balances_between(company_id, start_date, end_date)` | P&L, Cash Flow |
+| Step | Fields |
+|------|--------|
+| 1 — Company Info | Name*, Email*, Phone, Industry, Website, Address |
+| 2 — Legal Info | Legal Business Name*, Tax ID (EIN), Business Type, Legal Address |
+| 3 — Customer Contact | Customer Email, Customer Address |
 
-The frontend (`/reports`) renders all four reports in a tabbed view with:
-- Collapsible account sections
-- Browser print support (sidebar/chrome hidden automatically via `print:hidden` CSS)
-- PDF export via `@react-pdf/renderer` (`frontend/components/ReportPDF.tsx`)
+Finishing saves `onboarding_completed: true` → triggers COA provisioning → redirects to `/new-dashboard`.
+
+---
+
+## Design System
+
+All styling uses **CSS variables** — never hardcoded Tailwind colors:
+
+| Variable | Usage |
+|----------|-------|
+| `var(--bg-primary)` | Main background |
+| `var(--bg-card)` | Card background |
+| `var(--bg-secondary)` | Secondary / input background |
+| `var(--border-color)` | Borders |
+| `var(--text-primary/secondary/muted)` | Text hierarchy |
+| `var(--neon-cyan)` | Primary accent |
+| `var(--neon-fuchsia)` | Secondary accent |
+| `var(--neon-emerald)` | Positive / success accent |
 
 ---
 
 ## Production
 
-- Backend: use `requirements.production.txt` and `start.sh` (reads `PORT` env variable).
-- Frontend: `npm run build` then `npm run start`.
-- Set `NEXT_PUBLIC_API_BASE` to the deployed backend URL.
-- Keep `SUPABASE_KEY` and all API keys server-side only; never expose to the frontend.
-
-See **DEPLOYMENT_GUIDE.md** / **VERCEL_DEPLOYMENT.md** if present.
-
----
-
-## Documentation
-
-- **MIGRATION_GUIDE.md** — Database migration steps
-- **newschema.sql** — Canonical merged schema for this branch (use this)
-- **supabase_schema.sql** — Legacy full schema
-- **API docs** — http://localhost:8000/docs (when backend is running)
+- Backend: `requirements.production.txt` + `start.sh` (reads `PORT` env var for Railway/Render)
+- Frontend: `npm run build && npm run start`
+- Set `NEXT_PUBLIC_API_BASE` to deployed backend URL
+- Never expose `SUPABASE_KEY` or `PLAID_SECRET` to the frontend
 
 ---
 
