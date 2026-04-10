@@ -7,7 +7,7 @@ import NewSidebar from './NewSidebar'
 import AskAIButton from './AskAIButton'
 import { useTheme } from '@/contexts/ThemeContext'
 
-const publicRoutes = ['/', '/login', '/signup', '/auth/callback']
+const publicRoutes = ['/', '/login', '/signup', '/auth/callback', '/admin/login', '/forgot-password', '/reset-password']
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()

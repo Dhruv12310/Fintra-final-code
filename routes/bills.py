@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from database import supabase
-from middleware.auth import get_current_user_company
+from middleware.auth import get_current_user_company, require_min_role
 from routes.journal_helpers import create_auto_journal_entry, get_ap_account
 
 router = APIRouter(prefix="/bills", tags=["Bills"])
@@ -63,7 +63,7 @@ async def get_bill(
 @router.post("/")
 async def create_bill(
     body: BillCreate,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("user")),
 ):
     """Create draft bill with lines."""
     cid = auth["company_id"]
@@ -113,7 +113,7 @@ async def create_bill(
 async def update_bill(
     bill_id: str,
     body: dict,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
 ):
     """Update bill (e.g. status to posted). Auto-creates journal entry when posted."""
     cid = auth["company_id"]

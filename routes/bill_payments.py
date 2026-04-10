@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from database import supabase
-from middleware.auth import get_current_user_company
+from middleware.auth import get_current_user_company, require_min_role
 from routes.journal_helpers import create_auto_journal_entry, get_ap_account
 
 router = APIRouter(prefix="/bill-payments", tags=["Bill Payments"])
@@ -37,7 +37,7 @@ async def list_bill_payments(auth: Dict[str, str] = Depends(get_current_user_com
 @router.post("/")
 async def create_bill_payment(
     body: BillPaymentCreate,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("user")),
 ):
     """Create a bill payment (draft)."""
     cid = auth["company_id"]
@@ -60,7 +60,7 @@ async def create_bill_payment(
 async def apply_to_bills(
     payment_id: str,
     body: List[BillPaymentLineCreate],
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
 ):
     """Apply bill payment to one or more bills."""
     cid = auth["company_id"]

@@ -6,14 +6,14 @@ Provides industry benchmarks, competitor analysis, and growth recommendations.
 from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict
 from database import supabase
-from middleware.auth import get_current_user_company
+from middleware.auth import require_min_role
 from lib.perplexity_client import PerplexityClient
 import os
 
 router = APIRouter(prefix="/ai/research", tags=["AI Research"])
 
 @router.post("/industry-benchmarks")
-async def get_industry_benchmarks(auth: Dict[str, str] = Depends(get_current_user_company)):
+async def get_industry_benchmarks(auth: Dict[str, str] = Depends(require_min_role("accountant"))):
     """
     Get real-time industry benchmarks for the user's company.
     Uses Perplexity AI to fetch current market data and comparisons.
@@ -88,7 +88,7 @@ async def get_industry_benchmarks(auth: Dict[str, str] = Depends(get_current_use
 
 
 @router.post("/competitor-analysis")
-async def analyze_competitors(auth: Dict[str, str] = Depends(get_current_user_company)):
+async def analyze_competitors(auth: Dict[str, str] = Depends(require_min_role("accountant"))):
     """
     Compare company to competitors using real-time data from Perplexity AI.
     """
@@ -145,7 +145,7 @@ async def analyze_competitors(auth: Dict[str, str] = Depends(get_current_user_co
 
 
 @router.post("/tax-updates")
-async def get_tax_updates(auth: Dict[str, str] = Depends(get_current_user_company)):
+async def get_tax_updates(auth: Dict[str, str] = Depends(require_min_role("accountant"))):
     """
     Get latest tax compliance updates for the user's jurisdiction and business type.
     """
@@ -201,7 +201,7 @@ async def get_tax_updates(auth: Dict[str, str] = Depends(get_current_user_compan
 
 
 @router.post("/growth-recommendations")
-async def get_growth_recommendations(auth: Dict[str, str] = Depends(get_current_user_company)):
+async def get_growth_recommendations(auth: Dict[str, str] = Depends(require_min_role("accountant"))):
     """
     Get personalized growth recommendations based on company profile.
     Includes case studies and actionable strategies.
@@ -258,7 +258,7 @@ async def get_growth_recommendations(auth: Dict[str, str] = Depends(get_current_
 
 
 @router.get("/capabilities")
-async def get_research_capabilities(auth: Dict[str, str] = Depends(get_current_user_company)):
+async def get_research_capabilities(auth: Dict[str, str] = Depends(require_min_role("accountant"))):
     """
     Get available research capabilities based on company profile completeness.
     """

@@ -1,6 +1,8 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import table
+from middleware.activity_logger import ActivityLoggingMiddleware
+from middleware.rbac_guard import RBACGuardMiddleware
 from routes import (
     users,
     companies,
@@ -23,6 +25,7 @@ from routes import (
     reconciliation,
     reports,
     documents,
+    admin,
 )
 
 app = FastAPI(title="AI Financial Companion Backend")
@@ -44,6 +47,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RBACGuardMiddleware)
+app.add_middleware(ActivityLoggingMiddleware)
 
 # include routers
 app.include_router(users.router)
@@ -68,6 +73,7 @@ app.include_router(accounting_periods.router)
 app.include_router(reconciliation.router)
 app.include_router(reports.router)
 app.include_router(documents.router)
+app.include_router(admin.router)
 
 @app.get("/")
 def read_root():

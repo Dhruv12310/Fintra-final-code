@@ -40,3 +40,4 @@ htmlcov/
 
 # Temporary files
 temp_*
+.cursor/

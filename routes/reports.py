@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from typing import Optional, Dict
 from datetime import date, timedelta
 from database import supabase
-from middleware.auth import get_current_user_company
+from middleware.auth import require_min_role
 
 router = APIRouter(prefix="/reports", tags=["Reports"])
 
@@ -79,7 +79,7 @@ def _call_rpc(fn_name: str, params: dict) -> list:
 @router.get("/trial-balance")
 async def trial_balance(
     as_of_date: Optional[str] = None,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
 ):
     """Trial Balance: per-account debit/credit/net totals."""
     cid = auth["company_id"]
@@ -127,7 +127,7 @@ async def trial_balance(
 async def profit_loss(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
 ):
     """Profit & Loss: Revenue - Expenses with hierarchical breakdown."""
     cid = auth["company_id"]
@@ -186,7 +186,7 @@ async def profit_loss(
 @router.get("/balance-sheet")
 async def balance_sheet(
     as_of_date: Optional[str] = None,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
 ):
     """Balance Sheet: Assets = Liabilities + Equity, with Net Income."""
     cid = auth["company_id"]
@@ -248,7 +248,7 @@ async def balance_sheet(
 async def cash_flow(
     start_date: Optional[str] = None,
     end_date: Optional[str] = None,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
 ):
     """Cash Flow Statement: Operating, Investing, Financing (indirect method)."""
     cid = auth["company_id"]

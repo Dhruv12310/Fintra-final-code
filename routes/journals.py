@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict
 from database import supabase
 from datetime import datetime
-from middleware.auth import get_current_user_company
+from middleware.auth import get_current_user_company, require_min_role
 from routes.journal_helpers import create_auto_journal_entry
 
 router = APIRouter()
@@ -79,7 +79,7 @@ def get_journal_entry(journal_id: str, auth: Dict[str, str] = Depends(get_curren
     return response.data
 
 @router.post("/")
-def create_journal_entry(entry: JournalEntryCreate, auth: Dict[str, str] = Depends(get_current_user_company)):
+def create_journal_entry(entry: JournalEntryCreate, auth: Dict[str, str] = Depends(require_min_role("user"))):
     """Create a new journal entry with lines"""
     try:
         company_id = auth["company_id"]
@@ -128,7 +128,7 @@ def create_journal_entry(entry: JournalEntryCreate, auth: Dict[str, str] = Depen
 def update_journal_entry(
     journal_id: str,
     entry: JournalEntryUpdate,
-    auth: Dict[str, str] = Depends(get_current_user_company)
+    auth: Dict[str, str] = Depends(require_min_role("accountant"))
 ):
     """Update a journal entry (header only, not lines)"""
     company_id = auth["company_id"]
@@ -150,7 +150,7 @@ def update_journal_entry(
     return response.data[0]
 
 @router.delete("/{journal_id}")
-def delete_journal_entry(journal_id: str, auth: Dict[str, str] = Depends(get_current_user_company)):
+def delete_journal_entry(journal_id: str, auth: Dict[str, str] = Depends(require_min_role("accountant"))):
     """Delete a journal entry and its lines (reverse account balances)"""
     # Get the journal entry with lines (this already verifies company ownership)
     entry = get_journal_entry(journal_id, auth)

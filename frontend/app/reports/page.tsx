@@ -299,7 +299,8 @@ const TAB_TITLES: Record<Tab, string> = {
 }
 
 export default function ReportsPage() {
-  const { company } = useAuth()
+  const { company, user } = useAuth()
+  const canAccessReports = ['owner', 'admin', 'accountant'].includes((user?.role || '').toLowerCase())
   const [activeTab, setActiveTab] = useState<Tab>('balance-sheet')
   const [data, setData] = useState<any>(null)
   const [loading, setLoading] = useState(false)
@@ -352,6 +353,18 @@ export default function ReportsPage() {
         <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No company set up</h2>
         <p className="max-w-md mb-6" style={{ color: 'var(--text-secondary)' }}>Finish onboarding to use Reports.</p>
         <a href="/onboarding" className="px-4 py-2 rounded-full text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg, var(--neon-fuchsia), var(--neon-indigo))' }}>Complete onboarding</a>
+      </div>
+    )
+  }
+
+  if (!canAccessReports) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
+        <BarChart3 className="h-16 w-16 mb-4" style={{ color: 'var(--text-muted)' }} />
+        <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Reports access restricted</h2>
+        <p className="max-w-md mb-6" style={{ color: 'var(--text-secondary)' }}>
+          Statements are available for owner, admin, and accountant roles only.
+        </p>
       </div>
     )
   }

@@ -23,8 +23,9 @@ interface CachedInsights {
 }
 
 export default function AIConsolePage() {
-  const { company } = useAuth();
+  const { company, user } = useAuth();
   const companyId = company?.id || null;
+  const canAccessAI = ["owner", "admin", "accountant"].includes((user?.role || "").toLowerCase());
   const [loading, setLoading] = useState(false);
   const [insights, setInsights] = useState<InsightCard[]>([]);
   const [accountCount, setAccountCount] = useState(0);
@@ -184,6 +185,20 @@ export default function AIConsolePage() {
           <Target className="w-16 h-16 text-fuchsia-500 dark:text-fuchsia-300 mx-auto mb-4" />
           <h2 className="text-2xl font-semibold mb-2">Complete Onboarding First</h2>
           <p className="text-gray-600 dark:text-white/60">Set up your company profile to unlock AI insights.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!canAccessAI) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 text-gray-900 dark:text-slate-100 p-8 flex items-center justify-center">
+        <div className="text-center">
+          <Target className="w-16 h-16 text-fuchsia-500 dark:text-fuchsia-300 mx-auto mb-4" />
+          <h2 className="text-2xl font-semibold mb-2">AI Access Restricted</h2>
+          <p className="text-gray-600 dark:text-white/60">
+            Ask AI is available for owner, admin, and accountant roles only.
+          </p>
         </div>
       </div>
     );

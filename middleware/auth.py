@@ -7,8 +7,18 @@ from fastapi import HTTPException, Header, Depends
 from typing import Optional, Dict, Any
 import os
 import httpx
+from time import perf_counter
 from jose import jwt, jwk, JWTError
 from database import supabase
+from lib.audit import log_server_activity
+
+ROLE_HIERARCHY = {
+    "owner": 5,
+    "admin": 4,
+    "accountant": 3,
+    "user": 2,
+    "viewer": 1,
+}
 
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").rstrip("/")
@@ -27,7 +37,18 @@ def _get_signing_key_from_jwks(kid: str) -> Optional[Any]:
     if not SUPABASE_JWKS_URL:
         return None
     try:
+        started = perf_counter()
         resp = httpx.get(SUPABASE_JWKS_URL, timeout=10.0)
+        duration = int((perf_counter() - started) * 1000)
+        log_server_activity(
+            direction="outbound",
+            method="GET",
+            path="/auth/v1/.well-known/jwks.json",
+            status_code=resp.status_code,
+            duration_ms=duration,
+            target_service="supabase_jwks",
+            metadata={"kid": kid},
+        )
         resp.raise_for_status()
         data = resp.json()
         for key in data.get("keys", []):
@@ -35,7 +56,15 @@ def _get_signing_key_from_jwks(kid: str) -> Optional[Any]:
                 key_obj = jwk.construct(key)
                 _jwks_cache[kid] = key_obj
                 return key_obj
-    except Exception:
+    except Exception as exc:
+        log_server_activity(
+            direction="outbound",
+            method="GET",
+            path="/auth/v1/.well-known/jwks.json",
+            status_code=0,
+            target_service="supabase_jwks",
+            metadata={"kid": kid, "error": str(exc)},
+        )
         pass
     return None
 
@@ -161,13 +190,31 @@ async def verify_token(authorization: Optional[str] = Header(None)) -> str:
 
     # 3) Fallback: Supabase Auth API (can timeout on slow networks)
     try:
+        started = perf_counter()
         response = supabase.auth.get_user(token)
+        duration = int((perf_counter() - started) * 1000)
+        log_server_activity(
+            direction="outbound",
+            method="GET",
+            path="/auth/v1/user",
+            status_code=200 if response and response.user else 401,
+            duration_ms=duration,
+            target_service="supabase_auth_get_user",
+        )
         if not response or not response.user:
             raise HTTPException(status_code=401, detail="Invalid or expired token")
         return response.user.id
     except HTTPException:
         raise
     except Exception as e:
+        log_server_activity(
+            direction="outbound",
+            method="GET",
+            path="/auth/v1/user",
+            status_code=500,
+            target_service="supabase_auth_get_user",
+            metadata={"error": str(e)},
+        )
         raise HTTPException(
             status_code=401,
             detail=f"Authentication failed: {str(e)}"
@@ -238,16 +285,9 @@ async def require_role(required_role: str, auth: Dict[str, str] = Depends(get_cu
     Raises:
         HTTPException: If user doesn't have required role
     """
-    role_hierarchy = {
-        "admin": 4,
-        "accountant": 3,
-        "user": 2,
-        "viewer": 1
-    }
-
     user_role = auth.get("role", "user")
-    user_level = role_hierarchy.get(user_role, 0)
-    required_level = role_hierarchy.get(required_role, 999)
+    user_level = ROLE_HIERARCHY.get(user_role, 0)
+    required_level = ROLE_HIERARCHY.get(required_role, 999)
 
     if user_level < required_level:
         raise HTTPException(
@@ -256,6 +296,29 @@ async def require_role(required_role: str, auth: Dict[str, str] = Depends(get_cu
         )
 
     return auth
+
+
+def require_min_role(required_role: str):
+    """Dependency factory that enforces minimum role level."""
+    async def _dep(auth: Dict[str, str] = Depends(get_current_user_company)):
+        return await require_role(required_role, auth)
+    return _dep
+
+
+def require_any_role(*allowed_roles: str):
+    """Dependency factory that enforces explicit role allow-list."""
+    allowed = {r.lower() for r in allowed_roles}
+
+    async def _dep(auth: Dict[str, str] = Depends(get_current_user_company)):
+        user_role = (auth.get("role") or "user").lower()
+        if user_role not in allowed:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Insufficient permissions. Allowed roles: {', '.join(sorted(allowed))}"
+            )
+        return auth
+
+    return _dep
 
 
 # Optional: For routes that work with or without authentication

@@ -19,6 +19,7 @@ import {
   CalendarCheck,
   Users,
   CreditCard,
+  Shield,
 } from 'lucide-react'
 import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -50,6 +51,20 @@ export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
   const { user, company, loading: authLoading } = useAuth()
   const { theme } = useTheme()
   const isDark = theme === 'dark'
+  const role = (user?.role || '').toLowerCase()
+
+  const filteredNavigation = useMemo(() => {
+    const base = navigation.filter((item) => {
+      if ((item.href === '/ai' || item.href === '/reports') && ['user', 'viewer'].includes(role)) {
+        return false
+      }
+      return true
+    })
+    if (['owner', 'admin'].includes(role)) {
+      return [...base, { name: 'Admin', href: '/admin', icon: Shield }]
+    }
+    return base
+  }, [role])
 
   const initials = useMemo(() => {
     const source = user?.full_name || company?.name || 'Fintra'
@@ -130,7 +145,7 @@ export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
       </div>
 
       <nav className="flex-1 space-y-1 px-3 py-6 overflow-y-auto scrollbar-thin" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--border-color) transparent' }}>
-        {navigation.map(item => {
+        {filteredNavigation.map(item => {
           const isActive = pathname === item.href
           return (
             <Link

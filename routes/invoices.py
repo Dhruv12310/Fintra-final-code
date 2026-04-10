@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from database import supabase
-from middleware.auth import get_current_user_company
+from middleware.auth import get_current_user_company, require_min_role
 from routes.journal_helpers import create_auto_journal_entry, get_ar_account
 
 router = APIRouter(prefix="/invoices", tags=["Invoices"])
@@ -70,7 +70,7 @@ async def get_invoice(
 @router.post("/")
 async def create_invoice(
     body: InvoiceCreate,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("user")),
 ):
     """Create draft invoice with lines."""
     cid = auth["company_id"]
@@ -127,7 +127,7 @@ async def create_invoice(
 async def update_invoice(
     invoice_id: str,
     body: InvoiceUpdate,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
 ):
     """Update invoice (e.g. status to sent/posted). Auto-creates journal entry when posted."""
     cid = auth["company_id"]

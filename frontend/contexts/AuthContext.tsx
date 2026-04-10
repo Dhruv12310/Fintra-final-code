@@ -6,6 +6,11 @@ import { supabase, User, Company } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
 
+interface LoginLockoutState {
+  locked: boolean
+  remainingSeconds: number
+}
+
 interface AuthContextType {
   user: User | null
   supabaseUser: SupabaseUser | null
@@ -15,6 +20,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   refreshUser: () => Promise<void>
+  checkLoginLockout: (email: string) => Promise<LoginLockoutState>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -25,6 +31,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<Company | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
+
+  const normalizeEmail = (email: string) => email.trim().toLowerCase()
+
+  const toLockoutError = (remainingSeconds: number) => {
+    const error = new Error(`Too many failed attempts. Try again in ${Math.max(1, remainingSeconds)} seconds.`) as Error & {
+      code: string
+      remainingSeconds: number
+    }
+    error.code = 'AUTH_LOCKED'
+    error.remainingSeconds = Math.max(0, remainingSeconds)
+    return error
+  }
+
+  const isInvalidCredentialsError = (error: any) => {
+    const message = (error?.message || '').toLowerCase()
+    const code = (error?.code || '').toLowerCase()
+    return code === 'invalid_credentials' || message.includes('invalid login credentials')
+  }
+
+  const checkLoginLockout = useCallback(async (email: string): Promise<LoginLockoutState> => {
+    const normalizedEmail = normalizeEmail(email)
+    if (!normalizedEmail) {
+      return { locked: false, remainingSeconds: 0 }
+    }
+
+    try {
+      const response = await api.post<{ locked?: boolean; remaining_seconds?: number }>(
+        '/users/auth/attempts/precheck',
+        { email: normalizedEmail }
+      )
+      return {
+        locked: Boolean(response?.locked),
+        remainingSeconds: Number(response?.remaining_seconds || 0),
+      }
+    } catch {
+      // Fail-open to avoid blocking valid users on transient API errors.
+      return { locked: false, remainingSeconds: 0 }
+    }
+  }, [])
 
   const fetchUserData = async (authUser: SupabaseUser) => {
     if (!supabase) return
@@ -186,14 +231,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       )
     }
     try {
+      const normalizedEmail = normalizeEmail(email)
+
+      const precheck = await checkLoginLockout(normalizedEmail)
+      if (precheck.locked) {
+        throw toLockoutError(precheck.remainingSeconds)
+      }
+
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (error) throw error
+      if (error) {
+        if (isInvalidCredentialsError(error)) {
+          try {
+            const record = await api.post<{ locked?: boolean; remaining_seconds?: number }>(
+              '/users/auth/attempts/record',
+              { email: normalizedEmail, outcome: 'invalid_credentials' }
+            )
+            if (record?.locked) {
+              throw toLockoutError(Number(record?.remaining_seconds || 0))
+            }
+          } catch (recordError: any) {
+            if (recordError?.code === 'AUTH_LOCKED') {
+              throw recordError
+            }
+          }
+        }
+        throw error
+      }
 
       if (data.user) {
+        try {
+          await api.post('/users/auth/attempts/record', {
+            email: normalizedEmail,
+            outcome: 'success',
+          })
+        } catch {
+          // Do not block login if lockout reset endpoint is unavailable.
+        }
+
         // Ensure user row exists in the users table (may be missing after schema reset)
         const { data: existingUser } = await supabase
           .from('users')
@@ -271,6 +349,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         signIn,
         signOut,
         refreshUser,
+      checkLoginLockout,
       }}
     >
       {children}

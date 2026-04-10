@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from database import supabase
-from middleware.auth import get_current_user_company
+from middleware.auth import get_current_user_company, require_min_role
 from routes.journal_helpers import create_auto_journal_entry, get_ar_account
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
@@ -37,7 +37,7 @@ async def list_payments(auth: Dict[str, str] = Depends(get_current_user_company)
 @router.post("/")
 async def create_payment(
     body: PaymentCreate,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("user")),
 ):
     """Record a customer payment (draft)."""
     cid = auth["company_id"]
@@ -60,7 +60,7 @@ async def create_payment(
 async def apply_to_invoice(
     payment_id: str,
     body: ApplyPaymentBody,
-    auth: Dict[str, str] = Depends(get_current_user_company),
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
 ):
     """Apply payment to an invoice (reduces balance_due, increases amount_paid)."""
     cid = auth["company_id"]

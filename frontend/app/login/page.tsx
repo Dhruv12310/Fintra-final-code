@@ -8,7 +8,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 
 export default function Login() {
-  const { signIn } = useAuth()
+  const { signIn, checkLoginLockout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const searchParams = useSearchParams()
   const [showPassword, setShowPassword] = useState(false)
@@ -20,6 +20,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [showConfirmation, setShowConfirmation] = useState(false)
+  const [lockoutRemainingSeconds, setLockoutRemainingSeconds] = useState(0)
 
   useEffect(() => {
     setMounted(true)
@@ -33,8 +34,40 @@ export default function Login() {
     }
   }, [searchParams])
 
+  useEffect(() => {
+    if (lockoutRemainingSeconds <= 0) return
+
+    const timer = setInterval(() => {
+      setLockoutRemainingSeconds((prev) => {
+        if (prev <= 1) return 0
+        return prev - 1
+      })
+    }, 1000)
+
+    return () => clearInterval(timer)
+  }, [lockoutRemainingSeconds])
+
+  useEffect(() => {
+    const normalizedEmail = formData.email.trim().toLowerCase()
+    if (!normalizedEmail) {
+      setLockoutRemainingSeconds(0)
+      return
+    }
+
+    const timeout = setTimeout(async () => {
+      const lockout = await checkLoginLockout(normalizedEmail)
+      setLockoutRemainingSeconds(lockout.locked ? lockout.remainingSeconds : 0)
+    }, 300)
+
+    return () => clearTimeout(timeout)
+  }, [formData.email, checkLoginLockout])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (lockoutRemainingSeconds > 0) {
+      setError(`Too many failed attempts. Try again in ${lockoutRemainingSeconds} seconds.`)
+      return
+    }
     setLoading(true)
     setError('')
 
@@ -42,6 +75,10 @@ export default function Login() {
       await signIn(formData.email, formData.password)
     } catch (error: any) {
       console.error('Login failed:', error)
+      if (error?.code === 'AUTH_LOCKED') {
+        const remaining = Number(error?.remainingSeconds || 0)
+        setLockoutRemainingSeconds(remaining)
+      }
       setError(error.message || 'Login failed. Please try again.')
     } finally {
       setLoading(false)
@@ -177,6 +214,7 @@ export default function Login() {
                     color: 'var(--text-primary)',
                     boxShadow: theme === 'dark' ? '0 0 20px rgba(34, 211, 238, 0.05)' : 'none'
                   }}
+                  disabled={loading}
                   required
                 />
               </div>
@@ -199,6 +237,7 @@ export default function Login() {
                     color: 'var(--text-primary)',
                     boxShadow: theme === 'dark' ? '0 0 20px rgba(34, 211, 238, 0.05)' : 'none'
                   }}
+                  disabled={loading || lockoutRemainingSeconds > 0}
                   required
                 />
                 <button
@@ -226,7 +265,7 @@ export default function Login() {
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || lockoutRemainingSeconds > 0}
               className="w-full py-3.5 rounded-lg font-semibold transition-all hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
               style={{
                 background: 'linear-gradient(135deg, var(--neon-cyan), var(--neon-fuchsia))',
@@ -239,6 +278,8 @@ export default function Login() {
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
                   Signing in...
                 </span>
+              ) : lockoutRemainingSeconds > 0 ? (
+                `Locked (${lockoutRemainingSeconds}s)`
               ) : (
                 'Sign In'
               )}

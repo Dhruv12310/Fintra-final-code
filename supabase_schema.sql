@@ -46,6 +46,41 @@ CREATE TABLE users (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Login auth lockout state (global per email)
+CREATE TABLE auth_login_attempts (
+    email TEXT PRIMARY KEY,
+    consecutive_failures INT NOT NULL DEFAULT 0,
+    locked_until TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Admin passcode configuration for /admin second-step verification
+CREATE TABLE admin_passcodes (
+    user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    passcode_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Metadata-only server activity logs (request/response + outbound calls)
+CREATE TABLE server_activity_logs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    company_id UUID REFERENCES companies(id) ON DELETE SET NULL,
+    actor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    actor_role TEXT,
+    actor_email TEXT,
+    direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+    method TEXT,
+    path TEXT,
+    status_code INT,
+    duration_ms INT,
+    ip_address TEXT,
+    target_service TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- ==========================================
 -- 2. CHART OF ACCOUNTS (COA)
 -- ==========================================

@@ -32,8 +32,9 @@ export default function AskAIButton() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const { company } = useAuth()
+  const { company, user } = useAuth()
   const companyContextId = company?.id ?? null
+  const canAccessAI = ['owner', 'admin', 'accountant'].includes((user?.role || '').toLowerCase())
   const [companyId, setCompanyId] = useState<string | null>(null)
   const [attemptedFallback, setAttemptedFallback] = useState(false)
 
@@ -182,6 +183,10 @@ export default function AskAIButton() {
     "Explain this transaction",
     "Predict next month's expenses"
   ]
+
+  if (!canAccessAI) {
+    return null
+  }
 
   return (
     <>

@@ -4,7 +4,7 @@ from datetime import datetime
 from database import table
 import re
 from typing import Dict
-from middleware.auth import get_current_user_company
+from middleware.auth import require_min_role
 
 router = APIRouter(prefix="/ai", tags=["AI Overlook"])
 
@@ -173,13 +173,16 @@ Respond in JSON format:
 
 
 @router.post("/overlook_expense")
-def overlook_expense(expense_data: dict):
+def overlook_expense(
+    expense_data: dict,
+    auth: Dict[str, str] = Depends(require_min_role("accountant"))
+):
     """
     AI-powered expense validation and suggestion.
     Returns issues, suggestions, and a JSON patch for the expense.
     """
     try:
-        company_id = expense_data.get("company_id")
+        company_id = auth["company_id"]
         vendor_name = expense_data.get("vendor_name")
         amount = expense_data.get("amount")
         date = expense_data.get("date")
@@ -227,7 +230,10 @@ def overlook_expense(expense_data: dict):
 
 
 @router.post("/query")
-async def ai_query(query_data: dict, auth: Dict[str, str] = Depends(get_current_user_company)):
+async def ai_query(
+    query_data: dict,
+    auth: Dict[str, str] = Depends(require_min_role("accountant"))
+):
     """
     AI-powered business intelligence assistant.
 
@@ -612,7 +618,7 @@ Answer with ONLY information from the data above. If data is insufficient, say s
 
 
 @router.get("/financial-summary")
-async def financial_summary(auth: Dict[str, str] = Depends(get_current_user_company)):
+async def financial_summary(auth: Dict[str, str] = Depends(require_min_role("accountant"))):
     """
     Template-based financial summary — works without any external API keys.
     Pulls account balances, invoice/bill counts, and recent journal activity.
