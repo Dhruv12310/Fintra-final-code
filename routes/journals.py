@@ -4,7 +4,7 @@ from typing import List, Optional, Dict
 from database import supabase
 from datetime import datetime
 from middleware.auth import get_current_user_company, require_min_role
-from routes.journal_helpers import create_auto_journal_entry
+from routes.journal_helpers import create_auto_journal_entry, void_journal_entry_with_reversal
 
 router = APIRouter()
 
@@ -28,6 +28,10 @@ class JournalEntryUpdate(BaseModel):
     memo: Optional[str] = None
     reference: Optional[str] = None
     status: Optional[str] = None
+
+
+class JournalVoidBody(BaseModel):
+    reason: Optional[str] = None
 
 @router.get("/")
 def get_all_journal_entries(auth: Dict[str, str] = Depends(get_current_user_company)):
@@ -106,6 +110,7 @@ def create_journal_entry(entry: JournalEntryCreate, auth: Dict[str, str] = Depen
             reference=entry.reference,
             source=source,
             lines=lines,
+            source_type="manual",
         )
 
         # Fetch the complete entry with lines (same shape as GET /journals/{id})
@@ -151,50 +156,42 @@ def update_journal_entry(
 
 @router.delete("/{journal_id}")
 def delete_journal_entry(journal_id: str, auth: Dict[str, str] = Depends(require_min_role("accountant"))):
-    """Delete a journal entry and its lines (reverse account balances)"""
-    # Get the journal entry with lines (this already verifies company ownership)
+    """Delete a DRAFT journal entry. Posted entries are immutable and must be
+    voided via POST /journals/{id}/void, which posts a reversing entry."""
     entry = get_journal_entry(journal_id, auth)
 
-    # Reverse the account balances
-    for line in entry.get("journal_lines", []):
-        account_response = supabase.table("accounts")\
-            .select("current_balance, account_type")\
-            .eq("id", line["account_id"])\
-            .single()\
-            .execute()
+    if entry.get("status") == "posted":
+        raise HTTPException(
+            status_code=400,
+            detail="Posted entries cannot be deleted. Use POST /journals/{id}/void to create a reversing entry.",
+        )
 
-        if account_response.data:
-            account = account_response.data
-            current_balance = account.get("current_balance", 0) or 0
-            account_type = account.get("account_type", "")
-
-            # Reverse the transaction
-            if account_type in ["asset", "expense"]:
-                new_balance = current_balance - (line["debit"] or 0) + (line["credit"] or 0)
-            else:
-                new_balance = current_balance - (line["credit"] or 0) + (line["debit"] or 0)
-
-            supabase.table("accounts")\
-                .update({"current_balance": new_balance})\
-                .eq("id", line["account_id"])\
-                .execute()
-
-    # Set status to draft first (DB trigger blocks line changes on posted entries)
-    supabase.table("journal_entries")\
-        .update({"status": "draft"})\
-        .eq("id", journal_id)\
-        .execute()
-
-    # Delete journal lines
     supabase.table("journal_lines")\
         .delete()\
         .eq("journal_entry_id", journal_id)\
         .execute()
 
-    # Delete journal entry
     supabase.table("journal_entries")\
         .delete()\
         .eq("id", journal_id)\
         .execute()
 
-    return {"message": "Journal entry deleted successfully"}
+    return {"message": "Draft journal entry deleted"}
+
+
+@router.post("/{journal_id}/void")
+def void_journal_entry(
+    journal_id: str,
+    body: JournalVoidBody,
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
+):
+    """Void a posted journal entry by creating a reversing entry. The original
+    is marked void and stays in the ledger (immutable audit trail)."""
+    company_id = auth["company_id"]
+    user_id = auth.get("user_id")
+    return void_journal_entry_with_reversal(
+        company_id=company_id,
+        entry_id=journal_id,
+        voided_by=user_id,
+        reason=body.reason,
+    )

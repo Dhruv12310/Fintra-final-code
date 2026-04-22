@@ -48,6 +48,9 @@ amogh-endless/
 bigcapital/
 .claude/
 
+# Scratch / extraction files
+.gl_doc.txt
+
 # Node / Next.js
 node_modules/
 .next/

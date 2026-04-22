@@ -11,12 +11,13 @@ import {
   CashFlowPDF,
   TrialBalancePDF,
 } from '@/components/ReportPDF'
+import { GeneralLedgerReport } from '@/components/reports/GeneralLedger'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type Tab = 'balance-sheet' | 'profit-loss' | 'cash-flow' | 'trial-balance'
+type Tab = 'balance-sheet' | 'profit-loss' | 'cash-flow' | 'trial-balance' | 'general-ledger'
 
 interface CategoryData {
   accounts: { account_code: string; account_name: string; net_balance: number }[]
@@ -289,6 +290,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'profit-loss', label: 'Profit & Loss' },
   { key: 'cash-flow', label: 'Cash Flow' },
   { key: 'trial-balance', label: 'Trial Balance' },
+  { key: 'general-ledger', label: 'General Ledger' },
 ]
 
 const TAB_TITLES: Record<Tab, string> = {
@@ -296,6 +298,7 @@ const TAB_TITLES: Record<Tab, string> = {
   'profit-loss': 'Profit & Loss Statement',
   'cash-flow': 'Statement of Cash Flows',
   'trial-balance': 'Trial Balance',
+  'general-ledger': 'General Ledger',
 }
 
 export default function ReportsPage() {
@@ -323,10 +326,20 @@ export default function ReportsPage() {
     }
   }
 
-  const needsRange = activeTab === 'profit-loss' || activeTab === 'cash-flow'
+  const needsRange =
+    activeTab === 'profit-loss' ||
+    activeTab === 'cash-flow' ||
+    activeTab === 'general-ledger'
+  const isGL = activeTab === 'general-ledger'
 
   const fetchReport = useCallback(async () => {
     if (!company?.id) return
+    if (isGL) {
+      // GL component fetches its own data per selected account.
+      setData(null)
+      setLoading(false)
+      return
+    }
     setLoading(true)
     setData(null)
     try {
@@ -340,7 +353,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [company?.id, activeTab, asOfDate, startDate, endDate, needsRange])
+  }, [company?.id, activeTab, asOfDate, startDate, endDate, needsRange, isGL])
 
   useEffect(() => {
     fetchReport()
@@ -374,7 +387,11 @@ export default function ReportsPage() {
     : `As of ${formatDateDisplay(asOfDate)}`
 
   return (
-    <div className="space-y-6 p-6 max-w-4xl mx-auto print:p-0 print:max-w-none print:m-0">
+    <div
+      className={`space-y-6 p-6 mx-auto print:p-0 print:max-w-none print:m-0 ${
+        isGL ? 'max-w-7xl' : 'max-w-4xl'
+      }`}
+    >
       {/* Header — hidden in print */}
       <div className="print:hidden flex items-center justify-between">
         <div className="flex items-center gap-3">
@@ -384,7 +401,7 @@ export default function ReportsPage() {
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Financial Statements</p>
           </div>
         </div>
-        {data && !loading && (
+        {data && !loading && !isGL && (
           <PDFDownloadLink
             document={
               activeTab === 'balance-sheet' ? (
@@ -393,8 +410,10 @@ export default function ReportsPage() {
                 <ProfitLossPDF data={data} company={company?.name || ''} startDate={startDate} endDate={endDate} />
               ) : activeTab === 'cash-flow' ? (
                 <CashFlowPDF data={data} company={company?.name || ''} startDate={startDate} endDate={endDate} />
-              ) : (
+              ) : activeTab === 'trial-balance' ? (
                 <TrialBalancePDF data={data} company={company?.name || ''} asOfDate={asOfDate} />
+              ) : (
+                <></>
               )
             }
             fileName={`${company?.name || 'report'}-${activeTab}-${needsRange ? endDate : asOfDate}.pdf`}
@@ -512,6 +531,9 @@ export default function ReportsPage() {
             {activeTab === 'profit-loss' && <ProfitLossReport data={data} />}
             {activeTab === 'cash-flow' && <CashFlowReport data={data} />}
             {activeTab === 'trial-balance' && <TrialBalanceReport data={data} />}
+            {activeTab === 'general-ledger' && (
+              <GeneralLedgerReport startDate={startDate} endDate={endDate} />
+            )}
           </>
         )}
 

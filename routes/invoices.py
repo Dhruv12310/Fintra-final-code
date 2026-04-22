@@ -205,6 +205,8 @@ async def update_invoice(
             reference=inv.get("invoice_number", ""),
             source="invoice",
             lines=journal_lines,
+            source_type="invoice",
+            source_id=invoice_id,
         )
 
         # Link journal entry to invoice

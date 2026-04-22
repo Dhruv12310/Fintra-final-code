@@ -502,3 +502,119 @@ async def ap_aging(
             "over_90_days": bucket_summary(buckets["over_90"]),
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# 7. General Ledger
+# ---------------------------------------------------------------------------
+
+@router.get("/general-ledger/accounts")
+async def general_ledger_accounts(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
+):
+    """Left-rail data for the GL: every active account with opening balance,
+    period debit/credit totals, and ending balance."""
+    cid = auth["company_id"]
+    today = date.today()
+    start = start_date or str(today.replace(month=1, day=1))
+    end = end_date or str(today)
+
+    rows = _call_rpc("rpt_general_ledger_accounts", {
+        "p_company_id": cid,
+        "p_start": start,
+        "p_end": end,
+    })
+
+    accounts = [
+        {
+            "account_id": r["account_id"],
+            "account_code": r["account_code"],
+            "account_name": r["account_name"],
+            "account_type": r["account_type"],
+            "account_subtype": r.get("account_subtype"),
+            "opening_balance": round(float(r.get("opening_balance") or 0), 2),
+            "period_debit": round(float(r.get("period_debit") or 0), 2),
+            "period_credit": round(float(r.get("period_credit") or 0), 2),
+            "ending_balance": round(float(r.get("ending_balance") or 0), 2),
+        }
+        for r in rows
+    ]
+
+    return {
+        "company_id": cid,
+        "start_date": start,
+        "end_date": end,
+        "accounts": accounts,
+    }
+
+
+@router.get("/general-ledger")
+async def general_ledger(
+    account_id: str,
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    limit: int = 500,
+    offset: int = 0,
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
+):
+    """Posted journal lines for one account in a period, with running balance."""
+    cid = auth["company_id"]
+    today = date.today()
+    start = start_date or str(today.replace(month=1, day=1))
+    end = end_date or str(today)
+
+    rows = _call_rpc("rpt_general_ledger", {
+        "p_company_id": cid,
+        "p_account_id": account_id,
+        "p_start": start,
+        "p_end": end,
+    })
+
+    sliced = rows[offset: offset + limit] if limit else rows
+
+    transactions = [
+        {
+            "line_id": r["line_id"],
+            "entry_id": r["entry_id"],
+            "entry_date": r["entry_date"],
+            "journal_number": r.get("journal_number"),
+            "memo": r.get("memo"),
+            "description": r.get("description"),
+            "source": r.get("source"),
+            "source_type": r.get("source_type"),
+            "source_id": r.get("source_id"),
+            "reverses_entry_id": r.get("reverses_entry_id"),
+            "contact_id": r.get("contact_id"),
+            "contact_name": r.get("contact_name"),
+            "debit": round(float(r.get("debit") or 0), 2),
+            "credit": round(float(r.get("credit") or 0), 2),
+            "running_balance": round(float(r.get("running_balance") or 0), 2),
+        }
+        for r in sliced
+    ]
+
+    period_debit = round(sum(t["debit"] for t in transactions), 2)
+    period_credit = round(sum(t["credit"] for t in transactions), 2)
+    opening_balance = round(
+        (transactions[0]["running_balance"] - transactions[0]["debit"] + transactions[0]["credit"])
+        if transactions else 0,
+        2,
+    )
+    ending_balance = round(transactions[-1]["running_balance"] if transactions else opening_balance, 2)
+
+    return {
+        "company_id": cid,
+        "account_id": account_id,
+        "start_date": start,
+        "end_date": end,
+        "opening_balance": opening_balance,
+        "period_debit": period_debit,
+        "period_credit": period_credit,
+        "ending_balance": ending_balance,
+        "transactions": transactions,
+        "total": len(rows),
+        "limit": limit,
+        "offset": offset,
+    }

@@ -116,6 +116,8 @@ async def apply_to_invoice(
                 "contact_id": payment.get("customer_id"),
             },
         ],
+        source_type="payment",
+        source_id=payment_id,
     )
 
     # Link journal entry to payment

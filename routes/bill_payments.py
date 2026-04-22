@@ -118,6 +118,8 @@ async def apply_to_bills(
                 "contact_id": payment.get("vendor_id"),
             },
         ],
+        source_type="bill_payment",
+        source_id=payment_id,
     )
 
     # Link journal entry to bill payment

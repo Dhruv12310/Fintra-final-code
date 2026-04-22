@@ -189,6 +189,8 @@ async def update_bill(
             reference=b.get("bill_number", ""),
             source="bill",
             lines=journal_lines,
+            source_type="bill",
+            source_id=bill_id,
         )
 
         # Link journal entry to bill
