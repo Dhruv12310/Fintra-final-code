@@ -334,7 +334,7 @@ function PostModal({
 // ── Main Page ──────────────────────────────────────────────────────
 
 export default function BankingPage() {
-  const { company } = useAuth()
+  const { company, loading: authLoading } = useAuth()
   const co = company as any
 
   const [accounts, setAccounts] = useState<BankAccount[]>([])
@@ -509,11 +509,18 @@ export default function BankingPage() {
   }
 
   // ── Render guards ──
-  if (!co?.id) {
+  if (!co?.id && !authLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] gap-4 p-8">
         <Landmark className="w-12 h-12" style={{ color: 'var(--text-muted)' }} />
         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Complete onboarding to use Banking.</p>
+      </div>
+    )
+  }
+  if (!co?.id) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent)' }} />
       </div>
     )
   }

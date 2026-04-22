@@ -100,6 +100,7 @@ function LoginInner() {
 
   return (
     <div
+      data-glow-zone="true"
       className="min-h-screen flex items-center justify-center p-4 relative transition-colors duration-300"
       style={{ backgroundColor: 'var(--bg-primary)' }}
     >

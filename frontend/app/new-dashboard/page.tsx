@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import Link from 'next/link'
-import { ArrowUpRight, ArrowDownRight, Loader2, AlertCircle, RefreshCw, Plus } from 'lucide-react'
+import { AlertCircle, RefreshCw, Plus } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCountUp } from '@/hooks/useCountUp'
@@ -11,6 +11,8 @@ import { BankAccountsCard } from '@/components/dashboard/BankAccountsCard'
 import { WidgetGrid } from '@/components/dashboard/WidgetGrid'
 import { AddWidgetModal } from '@/components/dashboard/AddWidgetModal'
 import { WIDGET_CATALOG } from '@/components/dashboard/widgets'
+import { Sparkline } from '@/components/dashboard/Sparkline'
+import { HeroRevenueChart } from '@/components/dashboard/HeroRevenueChart'
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -83,53 +85,82 @@ function KpiSkeleton() {
 // ── KPI Card with count-up ─────────────────────────────────────────
 
 function KpiCard({
-  label, value, prior, favorable = true, suffix, children,
+  label, value, prior, favorable = true, suffix, series, accent = 'var(--accent)', children,
 }: {
   label: string
   value: number
   prior?: number
   favorable?: boolean
   suffix?: string
+  series?: number[]
+  accent?: string
   children?: React.ReactNode
-  glowColor?: string
 }) {
   const { ref, visible } = useScrollReveal<HTMLDivElement>()
   const animated = useCountUp(value, 900, visible)
   const [hovered, setHovered] = useState(false)
   const change = prior !== undefined ? pctChange(value, prior) : null
   const isGood = change !== null ? (favorable ? change >= 0 : change <= 0) : null
-  const ChangeIcon = change !== null ? (change >= 0 ? ArrowUpRight : ArrowDownRight) : null
+  const pillBg = isGood === null
+    ? 'var(--bg-muted)'
+    : isGood ? 'var(--positive-soft)' : 'var(--negative-soft)'
+  const pillColor = isGood === null
+    ? 'var(--text-muted)'
+    : isGood ? 'var(--positive)' : 'var(--negative)'
 
   return (
     <div
       ref={ref}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="flex flex-col gap-1.5 relative overflow-hidden"
+      className="flex flex-col gap-1 relative overflow-hidden"
       style={{
         background: 'var(--bg-card)',
         border: `1px solid ${hovered ? 'var(--border-strong)' : 'var(--border-color)'}`,
         borderRadius: 10,
-        padding: '16px 18px',
+        padding: '14px 16px 12px',
         transition: 'opacity 0.5s ease, transform 0.5s ease, border-color 0.15s ease, box-shadow 0.15s ease',
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0)' : 'translateY(12px)',
         boxShadow: hovered ? 'var(--shadow-md)' : 'var(--shadow-xs)',
+        minHeight: 116,
       }}
     >
-      <p
-        className="font-semibold uppercase"
-        style={{ color: 'var(--text-muted)', fontSize: 10.5, letterSpacing: '0.08em' }}
-      >
-        {label}
-      </p>
+      <div className="flex items-center justify-between">
+        <p
+          className="font-semibold uppercase"
+          style={{ color: 'var(--text-muted)', fontSize: 10.5, letterSpacing: '0.08em' }}
+        >
+          {label}
+        </p>
+        {change !== null && (
+          <span
+            className="inline-flex items-center gap-0.5 num"
+            style={{
+              background: pillBg,
+              color: pillColor,
+              borderRadius: 999,
+              fontSize: 10.5,
+              fontWeight: 600,
+              padding: '2px 7px',
+              lineHeight: 1.3,
+              letterSpacing: '-0.005em',
+            }}
+            title="vs prior period"
+          >
+            {change >= 0 ? '\u2197' : '\u2198'}
+            {Math.abs(change).toFixed(1)}%
+          </span>
+        )}
+      </div>
       <p
         className="num-display"
         style={{
           color: 'var(--text-primary)',
-          fontSize: 26,
-          lineHeight: 1.15,
+          fontSize: 28,
+          lineHeight: 1.1,
           fontWeight: 600,
+          marginTop: 2,
         }}
       >
         {$(animated)}
@@ -143,21 +174,14 @@ function KpiCard({
         )}
       </p>
       {children}
-      {change !== null && ChangeIcon && (
-        <div className="flex items-center gap-1 mt-0.5">
-          <ChangeIcon
-            className="w-3.5 h-3.5"
-            style={{ color: isGood ? 'var(--positive)' : 'var(--negative)' }}
+      {series && series.length > 1 && (
+        <div className="mt-auto pt-2" aria-hidden>
+          <Sparkline
+            values={series}
+            color={accent}
+            width={220}
+            height={32}
           />
-          <span
-            className="text-xs font-medium num"
-            style={{ color: isGood ? 'var(--positive)' : 'var(--negative)' }}
-          >
-            {Math.abs(change).toFixed(1)}%
-          </span>
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            vs prior period
-          </span>
         </div>
       )}
     </div>
@@ -167,9 +191,10 @@ function KpiCard({
 // ── Main Dashboard ─────────────────────────────────────────────────
 
 export default function NewDashboard() {
-  const { company, loading: authLoading, refreshUser } = useAuth()
+  const { user, company, loading: authLoading, refreshUser } = useAuth()
   const co = company as any
   const companyId = co?.id || null
+  const userCompanyId = (user as any)?.company_id || null
 
   const [period, setPeriod] = useState<Period>('this_month')
   const [data, setData] = useState<DashboardData | null>(null)
@@ -277,7 +302,10 @@ export default function NewDashboard() {
 
   // ── Guards ────────────────────────────────────────────────────
 
-  if (!companyId && !authLoading && retryCount >= 3) {
+  // Only show "no company" once the user is loaded AND the user genuinely
+  // has no company_id. While the user has a company_id but `company` is
+  // still hydrating, fall through to the skeleton.
+  if (!authLoading && user && !userCompanyId && retryCount >= 3) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
         <p style={{ color: 'var(--text-muted)' }}>No company found. Complete onboarding first.</p>
@@ -316,6 +344,14 @@ export default function NewDashboard() {
   if (!data) return null
 
   const { kpis } = data
+  const monthly = data.monthly_data || []
+  const revSeries = monthly.map(m => m.revenue || 0)
+  const expSeries = monthly.map(m => m.expenses || 0)
+  const netSeries = monthly.map(m => m.net || 0)
+  const cashSeries = monthly.reduce<number[]>((acc, m) => {
+    acc.push((acc[acc.length - 1] || 0) + (m.net || 0))
+    return acc
+  }, [])
 
   // ── Render ─────────────────────────────────────────────────────
 
@@ -407,16 +443,42 @@ export default function NewDashboard() {
       {/* ── KPI Cards + Bank Accounts ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-3">
-          <KpiCard label="Revenue" value={kpis.revenue.current} prior={kpis.revenue.prior} favorable />
-          <KpiCard label="Expenses" value={kpis.expenses.current} prior={kpis.expenses.prior} favorable={false} />
-          <KpiCard label="Net Profit" value={kpis.net_profit.current} prior={kpis.net_profit.prior} favorable>
+          <KpiCard
+            label="Revenue"
+            value={kpis.revenue.current}
+            prior={kpis.revenue.prior}
+            favorable
+            series={revSeries}
+            accent="var(--positive)"
+          />
+          <KpiCard
+            label="Expenses"
+            value={kpis.expenses.current}
+            prior={kpis.expenses.prior}
+            favorable={false}
+            series={expSeries}
+            accent="var(--negative)"
+          />
+          <KpiCard
+            label="Net Profit"
+            value={kpis.net_profit.current}
+            prior={kpis.net_profit.prior}
+            favorable
+            series={netSeries}
+            accent={kpis.net_profit.current >= 0 ? 'var(--positive)' : 'var(--negative)'}
+          >
             {kpis.revenue.current > 0 && (
               <p className="text-xs num" style={{ color: 'var(--text-muted)' }}>
                 {((kpis.net_profit.current / kpis.revenue.current) * 100).toFixed(1)}% margin
               </p>
             )}
           </KpiCard>
-          <KpiCard label="Cash Balance" value={kpis.cash_balance.current} />
+          <KpiCard
+            label="Cash Balance"
+            value={kpis.cash_balance.current}
+            series={cashSeries}
+            accent="var(--accent)"
+          />
           <div
             className="col-span-2 md:col-span-1 flex flex-col gap-1.5"
             style={{
@@ -457,6 +519,21 @@ export default function NewDashboard() {
 
         <BankAccountsCard accounts={bankAccounts} totalBalance={bankTotal} loading={bankLoading} />
       </div>
+
+      {/* ── Hero Revenue Chart ── */}
+      {monthly.length > 1 && (
+        <div
+          style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 10,
+            padding: '18px 20px 14px',
+            boxShadow: 'var(--shadow-xs)',
+          }}
+        >
+          <HeroRevenueChart monthlyData={monthly} />
+        </div>
+      )}
 
       {/* ── Widget Grid ── */}
       <WidgetGrid prefs={widgetPrefs} dashboardData={data} companyId={companyId} />

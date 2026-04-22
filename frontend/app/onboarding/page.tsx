@@ -169,7 +169,7 @@ export default function OnboardingPage() {
   )
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4 relative" style={{ backgroundColor: 'var(--bg-primary)' }}>
+    <div data-glow-zone="true" className="min-h-screen flex items-center justify-center p-4 relative" style={{ backgroundColor: 'var(--bg-primary)' }}>
 
       {/* Neon glows */}
       <div className="pointer-events-none fixed inset-0 overflow-hidden">

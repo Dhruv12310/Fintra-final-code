@@ -64,6 +64,7 @@ export default function RootPage() {
   // Show landing page for unauthenticated users
   return (
     <div
+      data-glow-zone="true"
       className="min-h-screen transition-colors duration-300"
       style={{ backgroundColor: 'var(--bg-primary)', color: 'var(--text-primary)' }}
     >

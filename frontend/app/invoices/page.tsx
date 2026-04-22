@@ -117,7 +117,7 @@ function StatusBadge({ status }: { status: string }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function InvoicesPage() {
-  const { company } = useAuth()
+  const { company, loading: authLoading } = useAuth()
   const companyId = company?.id || null
 
   // data
@@ -445,7 +445,7 @@ export default function InvoicesPage() {
     </div>
   )
 
-  if (!companyId) return (
+  if (!companyId && !authLoading) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
       <FileText className="h-16 w-16 mb-4" style={{ color: 'var(--text-muted)' }} />
       <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No company set up</h2>

@@ -90,7 +90,7 @@ function AssetRow({ asset, onDelete }: { asset: any; onDelete: (id: string) => v
 // ── Main Page ──────────────────────────────────────────────────────
 
 export default function MonthEndPage() {
-  const { company } = useAuth()
+  const { company, loading: authLoading } = useAuth()
   const co = company as any
   const companyId = co?.id || null
 
@@ -253,7 +253,7 @@ export default function MonthEndPage() {
     } catch { showToast(false, 'Failed to dispose asset') }
   }
 
-  if (!companyId) return (
+  if (!companyId && !authLoading) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
       <CalendarCheck className="h-16 w-16 mb-4" style={{ color: 'var(--text-muted)' }} />
       <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No company set up</h2>

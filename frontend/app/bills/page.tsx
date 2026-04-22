@@ -35,7 +35,7 @@ function StatusBadge({ status }: { status: string }) {
 }
 
 export default function BillsPage() {
-  const { company } = useAuth()
+  const { company, loading: authLoading } = useAuth()
   const companyId = company?.id || null
 
   const [bills, setBills] = useState<any[]>([])
@@ -270,7 +270,7 @@ export default function BillsPage() {
     </div>
   )
 
-  if (!companyId) return (
+  if (!companyId && !authLoading) return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
       <Receipt className="h-16 w-16 mb-4" style={{ color: 'var(--text-muted)' }} />
       <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No company set up</h2>

@@ -6,12 +6,9 @@ import {
   RevenueVsExpensesWidget,
   ProfitMarginTrendWidget,
   TopExpenseCategoriesWidget,
-  ReceivablesAgingWidget,
   ActionItemsWidget,
   RecentTransactionsWidget,
-  AccountsPayableWidget,
   AccountsReceivableWidget,
-  CashFlowWidget,
   InvoicesWidget,
   BillsWidget,
   DepositsWidget,
@@ -22,6 +19,8 @@ import {
   SentinelAlertsWidget,
   WIDGET_CATALOG,
 } from './widgets'
+import { AgingStackedBar } from './AgingStackedBar'
+import { CashFlowWaterfall } from './CashFlowWaterfall'
 import { api } from '@/lib/api'
 
 interface WidgetPref {
@@ -145,7 +144,10 @@ export function WidgetGrid({ prefs, dashboardData, companyId }: Props) {
       case 'receivables_aging':
         return (
           <WidgetCard key={id} id={id} showViewAll viewAllHref="/month-end">
-            <ReceivablesAgingWidget aging={wd.ar_aging ?? dashboardData.aging ?? {}} />
+            <AgingStackedBar
+              data={wd.ar_aging ?? dashboardData.aging ?? {}}
+              emptyLabel="No outstanding receivables"
+            />
           </WidgetCard>
         )
       case 'action_items':
@@ -163,7 +165,10 @@ export function WidgetGrid({ prefs, dashboardData, companyId }: Props) {
       case 'accounts_payable':
         return (
           <WidgetCard key={id} id={id} showViewAll viewAllHref="/month-end">
-            <AccountsPayableWidget data={wd.ap_aging ?? wd.accounts_payable ?? null} />
+            <AgingStackedBar
+              data={wd.ap_aging ?? wd.accounts_payable ?? {}}
+              emptyLabel="No bills outstanding"
+            />
           </WidgetCard>
         )
       case 'accounts_receivable':
@@ -175,7 +180,7 @@ export function WidgetGrid({ prefs, dashboardData, companyId }: Props) {
       case 'cash_flow':
         return (
           <WidgetCard key={id} id={id}>
-            <CashFlowWidget data={wd.cash_flow ?? null} />
+            <CashFlowWaterfall data={wd.cash_flow ?? null} />
           </WidgetCard>
         )
       case 'invoices':

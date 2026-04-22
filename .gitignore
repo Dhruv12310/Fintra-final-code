@@ -45,6 +45,7 @@ temp_*
 # Local working folders (never push)
 claude-code/
 amogh-endless/
+bigcapital/
 .claude/
 
 # Node / Next.js

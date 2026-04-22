@@ -44,7 +44,7 @@ const createEmptyEntry = (): JournalEntry => ({
 })
 
 export default function NewJournals() {
-  const { company } = useAuth()
+  const { company, loading: authLoading } = useAuth()
   const companyId = company?.id || null
   const [isCreating, setIsCreating] = useState(false)
   const [journalEntry, setJournalEntry] = useState<JournalEntry>(createEmptyEntry())
@@ -294,7 +294,7 @@ export default function NewJournals() {
   const { totalDebit, totalCredit } = calculateTotals()
   const balanced = isBalanced()
 
-  if (!companyId) {
+  if (!companyId && !authLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
         <FileText className="w-16 h-16 text-gray-400 dark:text-white/30 mb-4" />

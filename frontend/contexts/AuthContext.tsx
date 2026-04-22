@@ -31,8 +31,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [company, setCompany] = useState<Company | null>(null)
   const [loading, setLoading] = useState(true)
   const router = useRouter()
-  // Prevent concurrent fetchUserData calls (getSession + INITIAL_SESSION fire simultaneously)
-  const fetchInFlightRef = useRef(false)
+  // Deduplicate concurrent fetchUserData calls (getSession + INITIAL_SESSION
+  // fire simultaneously on mount). Using a Promise ref so that the second
+  // caller awaits the same in-flight fetch instead of returning instantly,
+  // which previously let `loading` flip to false before `company` was set.
+  const fetchInFlightRef = useRef<Promise<void> | null>(null)
 
   const normalizeEmail = (email: string) => email.trim().toLowerCase()
 
@@ -74,89 +77,89 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  const fetchUserData = async (authUser: SupabaseUser) => {
-    if (!supabase) return
-    // Guard: if a fetch is already in flight, skip — avoids double-fetch from
-    // getSession() and onAuthStateChange(INITIAL_SESSION) firing simultaneously.
-    if (fetchInFlightRef.current) return
-    fetchInFlightRef.current = true
-    try {
-      // Try Supabase direct read first; fall back to backend API if RLS blocks it
-      let userData: any = null
+  const fetchUserData = (authUser: SupabaseUser): Promise<void> => {
+    if (!supabase) return Promise.resolve()
+    // If a fetch is already in flight, return its promise so the caller
+    // awaits the actual completion instead of resolving immediately.
+    if (fetchInFlightRef.current) return fetchInFlightRef.current
 
-      const { data: directData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authUser.id)
-        .maybeSingle()
+    const run = async () => {
+      try {
+        let userData: any = null
 
-      if (!userError && directData) {
-        userData = directData
-      } else {
-        // RLS may block direct read — use backend API with JWT
-        try {
-          const { data: { session: currentSession } } = await supabase!.auth.getSession()
-          const authHeader: Record<string, string> = currentSession?.access_token
-            ? { 'Authorization': `Bearer ${currentSession.access_token}` }
-            : {}
-          const res = await fetch(
-            `${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'}/users/${authUser.id}`,
-            { headers: authHeader }
-          )
-          if (res.ok) {
-            const json = await res.json()
-            if (json?.data) userData = json.data
-          }
-        } catch {
-          // Backend not reachable
-        }
-      }
-
-      if (!userData) {
-        setUser(null)
-        setCompany(null)
-        // User has a valid Supabase session but no row in public.users yet —
-        // send them to onboarding so the backend can create the row.
-        if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/onboarding') && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/signup') && !window.location.pathname.startsWith('/auth')) {
-          router.push('/onboarding')
-        }
-        return
-      }
-
-      setUser(userData)
-
-      // Fetch company: try Supabase first; fall back to backend API
-      if (userData.company_id) {
-        let companyData: any = null
-
-        const { data: directCompany, error: companyError } = await supabase
-          .from('companies')
+        const { data: directData, error: userError } = await supabase!
+          .from('users')
           .select('*')
-          .eq('id', userData.company_id)
+          .eq('id', authUser.id)
           .maybeSingle()
 
-        if (!companyError && directCompany) {
-          companyData = directCompany
+        if (!userError && directData) {
+          userData = directData
         } else {
           try {
-            const res = await api.get<{ data?: any[] }>('/companies/')
-            if (res?.data && res.data.length > 0) {
-              companyData = res.data[0]
+            const { data: { session: currentSession } } = await supabase!.auth.getSession()
+            const authHeader: Record<string, string> = currentSession?.access_token
+              ? { 'Authorization': `Bearer ${currentSession.access_token}` }
+              : {}
+            const res = await fetch(
+              `${process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:8000'}/users/${authUser.id}`,
+              { headers: authHeader }
+            )
+            if (res.ok) {
+              const json = await res.json()
+              if (json?.data) userData = json.data
             }
           } catch {
             // Backend not reachable
           }
         }
 
-        setCompany(companyData)
-      } else {
-        setCompany(null)
+        if (!userData) {
+          setUser(null)
+          setCompany(null)
+          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/onboarding') && !window.location.pathname.startsWith('/login') && !window.location.pathname.startsWith('/signup') && !window.location.pathname.startsWith('/auth')) {
+            router.push('/onboarding')
+          }
+          return
+        }
+
+        setUser(userData)
+
+        if (userData.company_id) {
+          let companyData: any = null
+
+          const { data: directCompany, error: companyError } = await supabase!
+            .from('companies')
+            .select('*')
+            .eq('id', userData.company_id)
+            .maybeSingle()
+
+          if (!companyError && directCompany) {
+            companyData = directCompany
+          } else {
+            try {
+              const res = await api.get<{ data?: any[] }>('/companies/')
+              if (res?.data && res.data.length > 0) {
+                companyData = res.data[0]
+              }
+            } catch {
+              // Backend not reachable
+            }
+          }
+
+          setCompany(companyData)
+        } else {
+          setCompany(null)
+        }
+      } catch (error) {
+        console.error('Error fetching user data:', error)
+      } finally {
+        fetchInFlightRef.current = null
       }
-    } catch (error) {
-      console.error('Error fetching user data:', error)
-    } finally {
-      fetchInFlightRef.current = false
     }
+
+    fetchInFlightRef.current = run()
+    return fetchInFlightRef.current
   }
 
   useEffect(() => {
