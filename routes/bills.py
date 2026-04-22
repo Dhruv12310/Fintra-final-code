@@ -26,6 +26,8 @@ class BillCreate(BaseModel):
     due_date: Optional[str] = None
     memo: Optional[str] = None
     lines: List[BillLineCreate]
+    tax_rate_id: Optional[str] = None
+    tax_rate: Optional[float] = None
 
 
 @router.get("/")
@@ -78,7 +80,18 @@ async def create_bill(
                 next_num = f"{prefix}{n:03d}"
         except Exception:
             pass
-    total = sum(line.amount for line in body.lines)
+    subtotal = sum(line.amount for line in body.lines)
+
+    # Resolve tax rate
+    tax_rate = body.tax_rate or 0.0
+    tax_rate_id = body.tax_rate_id
+    if tax_rate_id and not tax_rate:
+        tr = supabase.table("tax_rates").select("rate").eq("id", tax_rate_id).eq("company_id", cid).single().execute()
+        if tr.data:
+            tax_rate = float(tr.data["rate"])
+    tax_total = round(subtotal * tax_rate, 2)
+    total = round(subtotal + tax_total, 2)
+
     bill_data = {
         "company_id": cid,
         "vendor_id": body.vendor_id,
@@ -86,8 +99,10 @@ async def create_bill(
         "bill_date": body.bill_date,
         "due_date": body.due_date or body.bill_date,
         "memo": body.memo,
-        "subtotal": total,
-        "tax_total": 0,
+        "subtotal": subtotal,
+        "tax_rate_id": tax_rate_id,
+        "tax_rate": tax_rate,
+        "tax_total": tax_total,
         "total": total,
         "amount_paid": 0,
         "balance_due": total,

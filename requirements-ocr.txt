@@ -1,4 +1,0 @@
-# Optional: receipt parsing (/parse and /parse/ai). Install after requirements.txt.
-# Large download (PyTorch). Only needed if you use receipt upload features.
-easyocr==1.7.0
-pdf2image==1.17.0

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Header
 from database import table, supabase
 from typing import Dict, Optional
-from middleware.auth import get_current_user_company, require_role, verify_token, ensure_user_row_from_token
+from middleware.auth import get_current_user_company, require_role, require_min_role, verify_token, ensure_user_row_from_token
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,12 +9,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/companies", tags=["Companies"])
 
 
-# Get all companies (with users included)
+# Get caller's company with its users (admin+)
 @router.get("/with-users")
-def get_companies_with_users():
-    """Fetch all companies along with their associated users."""
+def get_companies_with_users(auth: Dict[str, str] = Depends(require_min_role("admin"))):
+    """Fetch the caller's company with its users."""
     try:
-        response = table("companies").select("*, users(full_name, email, role, user_type)").execute()
+        response = (
+            table("companies")
+            .select("*, users(full_name, email, role)")
+            .eq("id", auth["company_id"])
+            .execute()
+        )
         return {"status": "success", "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching companies: {e}")
@@ -66,11 +71,15 @@ def get_company(company_id: str, auth: Dict[str, str] = Depends(get_current_user
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Create a new company
+# Create a new company — requires a valid JWT (used during onboarding before company_id is set)
 @router.post("/")
-def create_company(company: dict):
+def create_company(company: dict, user_id: str = Depends(verify_token)):
     try:
         response = table("companies").insert(company).execute()
+        if response.data:
+            # Auto-link the creating user to their new company
+            company_id = response.data[0]["id"]
+            supabase.table("users").update({"company_id": company_id}).eq("id", user_id).execute()
         return {"status": "success", "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -208,13 +217,22 @@ async def provision_coa(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Get all users belonging to a specific company
+# Get users belonging to a company — must be a member of that company
 @router.get("/{company_id}/users")
-def get_company_users(company_id: str):
-    """Fetch all users that belong to a given company."""
+def get_company_users(company_id: str, auth: Dict[str, str] = Depends(get_current_user_company)):
+    """Fetch users that belong to the caller's company."""
     try:
-        response = table("users").select("*, companies(name, industry)").eq("company_id", company_id).execute()
+        if auth["company_id"] != company_id:
+            raise HTTPException(status_code=403, detail="Cannot access another company's users")
+        response = (
+            table("users")
+            .select("id, email, full_name, role, created_at")
+            .eq("company_id", company_id)
+            .execute()
+        )
         return {"status": "success", "data": response.data}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching users: {e}")
 

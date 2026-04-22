@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { BarChart3, Mail, Lock, Eye, EyeOff, CheckCircle, Sun, Moon, ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/AuthContext'
 import { useTheme } from '@/contexts/ThemeContext'
 
-export default function Login() {
+function LoginInner() {
   const { signIn, checkLoginLockout } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const searchParams = useSearchParams()
@@ -322,5 +322,13 @@ export default function Login() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function Login() {
+  return (
+    <Suspense fallback={<div className="min-h-screen" style={{ backgroundColor: 'var(--bg-primary)' }} />}>
+      <LoginInner />
+    </Suspense>
   )
 }

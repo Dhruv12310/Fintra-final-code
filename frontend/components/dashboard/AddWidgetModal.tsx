@@ -98,7 +98,7 @@ export function AddWidgetModal({ open, currentPrefs, onClose, onSave, saving }: 
             onClick={handleSave}
             disabled={saving}
             className="px-4 py-2 text-sm font-medium rounded-lg transition-all disabled:opacity-60"
-            style={{ background: 'var(--neon-cyan)', color: '#000' }}
+            style={{ background: 'var(--accent)', color: '#fff' }}
           >
             {saving ? 'Saving…' : 'Save'}
           </button>
@@ -116,18 +116,18 @@ function WidgetCard({
       onClick={onToggle}
       className="flex items-start gap-3 p-3 rounded-lg text-left transition-all"
       style={{
-        background: checked ? 'rgba(0,255,255,0.05)' : 'var(--bg-secondary)',
-        border: `1px solid ${checked ? 'var(--neon-cyan)' : 'var(--border-color)'}`,
+        background: checked ? 'var(--accent-subtle)' : 'var(--bg-secondary)',
+        border: `1px solid ${checked ? 'var(--accent)' : 'var(--border-color)'}`,
       }}
     >
       <div
         className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0 mt-0.5 transition-colors"
         style={{
-          background: checked ? 'var(--neon-cyan)' : 'var(--border-color)',
-          border: `1px solid ${checked ? 'var(--neon-cyan)' : 'transparent'}`,
+          background: checked ? 'var(--accent)' : 'var(--border-color)',
+          border: `1px solid ${checked ? 'var(--accent)' : 'transparent'}`,
         }}
       >
-        {checked && <Check className="w-3 h-3" style={{ color: '#000' }} />}
+        {checked && <Check className="w-3 h-3" style={{ color: '#fff' }} />}
       </div>
       <div className="min-w-0">
         <div className="flex items-center gap-1.5">

@@ -41,3 +41,25 @@ htmlcov/
 # Temporary files
 temp_*
 .cursor/
+
+# Local working folders (never push)
+claude-code/
+amogh-endless/
+.claude/
+
+# Node / Next.js
+node_modules/
+.next/
+frontend/node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+frontend/.turbo/
+
+# Build artifacts
+build/
+dist/
+*.tsbuildinfo
+
+# Editor
+*.code-workspace
+

@@ -8,9 +8,178 @@ from typing import Optional, Dict, List
 from datetime import date, datetime
 from database import supabase
 from middleware.auth import get_current_user_company
+from lib.crypto import encrypt_token, decrypt_token
 import os
 
+
+def _plaid_get(obj, key, default=None):
+    """
+    Safe accessor for plaid-python v14+ response objects.
+    Supports both dict-style (obj["key"]) and attribute-style (obj.key) access.
+    """
+    if obj is None:
+        return default
+    if hasattr(obj, "__getitem__"):
+        try:
+            val = obj[key]
+            return default if val is None else val
+        except (KeyError, TypeError, IndexError):
+            pass
+    val = getattr(obj, key, None)
+    return default if val is None else val
+
+
+def _plaid_str(val, default="") -> str:
+    """
+    Convert a Plaid enum/value to a plain lowercase string.
+    plaid-python v14 enums have __str__ like "AccountType.depository" — strip the class prefix.
+    """
+    if val is None:
+        return default
+    s = str(val)
+    return s.split(".")[-1].lower() if "." in s else s.lower()
+
 router = APIRouter(prefix="/bank", tags=["Banking"])
+
+
+# ── Auto-categorization REST endpoint (used by banking UI + agent) ──
+
+@router.post("/transactions/auto-categorize")
+async def auto_categorize(
+    body: dict = {},
+    auth: Dict[str, str] = Depends(get_current_user_company),
+):
+    """
+    Run AI + rule-based categorization on all unreviewed transactions.
+    Returns summary counts + per-transaction results.
+    """
+    from lib.categorization import categorize_transaction, _load_historical
+
+    company_id = auth["company_id"]
+    bank_account_id = body.get("bank_account_id")
+    limit = int(body.get("limit", 100))
+
+    q = supabase.table("bank_transactions")\
+        .select("id, name, merchant_name, amount, posted_date, raw")\
+        .eq("company_id", company_id)\
+        .eq("status", "unreviewed")\
+        .is_("user_selected_account_id", "null")\
+        .order("posted_date", desc=True)\
+        .limit(limit)
+    if bank_account_id:
+        q = q.eq("bank_account_id", bank_account_id)
+    txns = q.execute().data or []
+
+    if not txns:
+        return {"total": 0, "auto_applied": 0, "suggested": 0, "skipped": 0, "results": []}
+
+    accounts = supabase.table("accounts")\
+        .select("id, account_code, account_name, account_type")\
+        .eq("company_id", company_id).eq("is_active", True)\
+        .execute().data or []
+    historical = _load_historical(company_id)
+
+    results = []
+    auto_applied = suggested = skipped = 0
+
+    for txn in txns:
+        res = await categorize_transaction(company_id, txn, accounts, historical)
+        if not res:
+            skipped += 1
+            results.append({"txn_id": txn["id"], "status": "skipped"})
+            continue
+
+        confidence = res.get("confidence", 0)
+        supabase.table("bank_transactions").update({
+            "suggested_account_id": res["account_id"],
+        }).eq("id", txn["id"]).execute()
+
+        if confidence >= 0.85:
+            auto_applied += 1
+            status = "auto_applied"
+        else:
+            suggested += 1
+            status = "suggested"
+
+        results.append({
+            "txn_id": txn["id"],
+            "name": txn.get("name"),
+            "account_id": res["account_id"],
+            "account_name": res.get("account_name"),
+            "confidence": round(confidence, 2),
+            "source": res.get("source"),
+            "reasoning": res.get("reasoning"),
+            "status": status,
+        })
+
+    return {
+        "total": len(txns),
+        "auto_applied": auto_applied,
+        "suggested": suggested,
+        "skipped": skipped,
+        "results": results,
+    }
+
+
+@router.post("/transactions/{txn_id}/accept-suggestion")
+def accept_suggestion(
+    txn_id: str,
+    auth: Dict[str, str] = Depends(get_current_user_company),
+):
+    """Accept AI suggestion for a transaction → moves to user_selected + learns rule."""
+    from lib.categorization import learn_from_correction
+    company_id = auth["company_id"]
+    user_id = auth["user_id"]
+
+    txn = supabase.table("bank_transactions")\
+        .select("id, name, merchant_name, suggested_account_id")\
+        .eq("id", txn_id).eq("company_id", company_id)\
+        .single().execute()
+    if not txn.data or not txn.data.get("suggested_account_id"):
+        raise HTTPException(status_code=400, detail="No suggestion to accept")
+
+    account_id = txn.data["suggested_account_id"]
+    supabase.table("bank_transactions").update({
+        "user_selected_account_id": account_id,
+    }).eq("id", txn_id).execute()
+
+    learn_from_correction(company_id, txn.data, account_id, user_id)
+    return {"ok": True}
+
+
+@router.post("/transactions/{txn_id}/reject-suggestion")
+def reject_suggestion(
+    txn_id: str,
+    body: dict = {},
+    auth: Dict[str, str] = Depends(get_current_user_company),
+):
+    """Reject AI suggestion and optionally provide the correct account (learns rule)."""
+    from lib.categorization import learn_from_correction
+    company_id = auth["company_id"]
+    user_id = auth["user_id"]
+
+    correct_account_id = body.get("correct_account_id")
+
+    txn = supabase.table("bank_transactions")\
+        .select("id, name, merchant_name")\
+        .eq("id", txn_id).eq("company_id", company_id)\
+        .single().execute()
+    if not txn.data:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+
+    # Clear the suggestion
+    supabase.table("bank_transactions").update({
+        "suggested_account_id": None,
+    }).eq("id", txn_id).execute()
+
+    # If user provided the correct account, learn from it
+    if correct_account_id:
+        supabase.table("bank_transactions").update({
+            "user_selected_account_id": correct_account_id,
+        }).eq("id", txn_id).execute()
+        learn_from_correction(company_id, txn.data, correct_account_id, user_id)
+
+    return {"ok": True}
 
 # ── Plaid client setup ─────────────────────────────────────────────
 
@@ -97,51 +266,82 @@ def exchange_token(body: ExchangeTokenBody, auth: Dict[str, str] = Depends(get_c
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Token exchange failed: {e}")
 
-    # 2. Save connection to DB
-    conn_row = supabase.table("bank_connections").insert({
-        "company_id": company_id,
-        "user_id": user_id,
-        "provider": "plaid",
-        "provider_item_id": item_id,
-        "provider_access_token": access_token,
-        "institution_name": body.institution_name,
-        "status": "active",
-    }).execute().data
+    # 2. Save connection to DB (access token encrypted at rest)
+    try:
+        conn_row = supabase.table("bank_connections").insert({
+            "company_id": company_id,
+            "user_id": user_id,
+            "provider": "plaid",
+            "provider_item_id": item_id,
+            "provider_access_token": encrypt_token(access_token),
+            "institution_name": body.institution_name,
+            "status": "active",
+        }).execute().data
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to save bank connection: {e}")
     if not conn_row:
-        raise HTTPException(status_code=400, detail="Failed to save connection")
+        raise HTTPException(status_code=400, detail="Failed to save bank connection (empty response)")
     connection_id = conn_row[0]["id"]
 
     # 3. Pull accounts from Plaid
     try:
         accts_resp = client.accounts_get(AccountsGetRequest(access_token=access_token))
-        plaid_accounts = accts_resp["accounts"]
+        plaid_accounts = _plaid_get(accts_resp, "accounts", []) or []
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to fetch accounts: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch accounts from Plaid: {e}")
 
     # 4. Save each Plaid account as bank_account
     created_accounts = []
     for acct in plaid_accounts:
-        if body.account_ids and acct["account_id"] not in body.account_ids:
+        acct_account_id = _plaid_get(acct, "account_id")
+        if body.account_ids and acct_account_id not in body.account_ids:
             continue
-        balances = acct.get("balances", {})
-        row = supabase.table("bank_accounts").insert({
+
+        balances = _plaid_get(acct, "balances") or {}
+        bal_current = _plaid_get(balances, "current")
+        bal_available = _plaid_get(balances, "available")
+        acct_type = _plaid_str(_plaid_get(acct, "type", "depository"), "depository")
+        acct_subtype = _plaid_str(_plaid_get(acct, "subtype", ""), "")
+
+        insert_data = {
             "company_id": company_id,
             "connection_id": connection_id,
-            "provider_account_id": acct["account_id"],
-            "name": acct.get("name", "Account"),
-            "mask": acct.get("mask"),
-            "type": _map_account_type(str(acct.get("type", "depository"))),
-            "account_subtype": str(acct.get("subtype", "")),
-            "institution_name": body.institution_name,
-            "balance_current": float(balances.get("current") or 0),
-            "balance_available": float(balances.get("available") or 0) if balances.get("available") is not None else None,
+            "provider_account_id": acct_account_id,
+            "name": _plaid_get(acct, "name", "Account"),
+            "mask": _plaid_get(acct, "mask"),
+            "type": _map_account_type(acct_type),
             "is_active": True,
-        }).execute().data
+        }
+        # Include optional columns only if they exist in the table (migration 008)
+        try:
+            insert_data["account_subtype"] = acct_subtype
+            insert_data["institution_name"] = body.institution_name
+            insert_data["balance_current"] = float(bal_current or 0)
+            if bal_available is not None:
+                insert_data["balance_available"] = float(bal_available)
+        except Exception:
+            pass
+
+        try:
+            row = supabase.table("bank_accounts").insert(insert_data).execute().data
+        except Exception:
+            # If insert fails due to missing columns (migration 008 not yet run),
+            # retry without the optional columns
+            minimal_data = {k: v for k, v in insert_data.items()
+                            if k not in ("account_subtype", "institution_name", "balance_current", "balance_available")}
+            try:
+                row = supabase.table("bank_accounts").insert(minimal_data).execute().data
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"Failed to save bank account: {e}")
+
         if row:
             created_accounts.append(row[0])
 
-    # 5. Trigger initial transaction sync
-    _sync_transactions(connection_id, access_token, company_id)
+    # 5. Trigger initial transaction sync (non-blocking — sync failure must not prevent connection)
+    try:
+        _sync_transactions(connection_id, access_token, company_id)
+    except Exception:
+        pass  # Sync errors are non-fatal; account is already saved
 
     return {
         "connection_id": connection_id,
@@ -168,9 +368,13 @@ def _sync_transactions(connection_id: str, access_token: str, company_id: str):
 
     client = _plaid_client()
 
-    # Get current cursor from DB
-    conn = supabase.table("bank_connections").select("sync_cursor").eq("id", connection_id).single().execute()
-    cursor = conn.data.get("sync_cursor") if conn.data else None
+    # Get current cursor from DB (sync_cursor column added by migration 008 — may not exist yet)
+    cursor = None
+    try:
+        conn = supabase.table("bank_connections").select("sync_cursor").eq("id", connection_id).single().execute()
+        cursor = conn.data.get("sync_cursor") if conn.data else None
+    except Exception:
+        cursor = None
 
     # Get bank_accounts for this connection (to map provider_account_id → our id)
     ba_rows = supabase.table("bank_accounts").select("id, provider_account_id").eq("connection_id", connection_id).execute().data or []
@@ -190,62 +394,79 @@ def _sync_transactions(connection_id: str, access_token: str, company_id: str):
             break
 
         # Process added transactions
-        for txn in resp.get("added", []):
-            ba_id = acct_map.get(txn.get("account_id"))
+        for txn in _plaid_get(resp, "added", []):
+            ba_id = acct_map.get(_plaid_get(txn, "account_id"))
             if not ba_id:
                 continue
-            prov_id = txn.get("transaction_id")
-            amount = float(txn.get("amount") or 0)  # Plaid: positive = debit/outflow, negative = credit/inflow
+            prov_id = _plaid_get(txn, "transaction_id")
+            amount = float(_plaid_get(txn, "amount") or 0)  # Plaid: positive = debit/outflow
             row_data = {
                 "company_id": company_id,
                 "bank_account_id": ba_id,
                 "provider_transaction_id": prov_id,
-                "posted_date": str(txn.get("date") or date.today()),
-                "name": txn.get("name", "Transaction"),
-                "merchant_name": txn.get("merchant_name"),
+                "posted_date": str(_plaid_get(txn, "date") or date.today()),
+                "name": _plaid_get(txn, "name", "Transaction"),
+                "merchant_name": _plaid_get(txn, "merchant_name"),
                 "amount": abs(amount),
-                "pending": bool(txn.get("pending", False)),
+                "pending": bool(_plaid_get(txn, "pending", False)),
                 "status": "unreviewed",
                 "raw": {
                     "plaid_amount": amount,
                     "is_outflow": amount > 0,
-                    "category": txn.get("category", []),
-                    "payment_channel": txn.get("payment_channel"),
+                    "category": _plaid_get(txn, "category") or [],
+                    "payment_channel": _plaid_get(txn, "payment_channel"),
                 },
             }
-            # Upsert to avoid duplicates
-            supabase.table("bank_transactions").upsert(row_data, on_conflict="company_id,provider_transaction_id").execute()
-            added_count += 1
+            try:
+                supabase.table("bank_transactions").upsert(row_data, on_conflict="company_id,provider_transaction_id").execute()
+                added_count += 1
+            except Exception:
+                pass
 
         # Process modified
-        for txn in resp.get("modified", []):
-            prov_id = txn.get("transaction_id")
-            amount = float(txn.get("amount") or 0)
-            supabase.table("bank_transactions").update({
-                "name": txn.get("name", "Transaction"),
-                "merchant_name": txn.get("merchant_name"),
-                "amount": abs(amount),
-                "pending": bool(txn.get("pending", False)),
-                "raw": {
-                    "plaid_amount": amount,
-                    "is_outflow": amount > 0,
-                    "category": txn.get("category", []),
-                },
-            }).eq("provider_transaction_id", prov_id).eq("company_id", company_id).execute()
+        for txn in _plaid_get(resp, "modified", []):
+            prov_id = _plaid_get(txn, "transaction_id")
+            amount = float(_plaid_get(txn, "amount") or 0)
+            try:
+                supabase.table("bank_transactions").update({
+                    "name": _plaid_get(txn, "name", "Transaction"),
+                    "merchant_name": _plaid_get(txn, "merchant_name"),
+                    "amount": abs(amount),
+                    "pending": bool(_plaid_get(txn, "pending", False)),
+                    "raw": {
+                        "plaid_amount": amount,
+                        "is_outflow": amount > 0,
+                        "category": _plaid_get(txn, "category") or [],
+                    },
+                }).eq("provider_transaction_id", prov_id).eq("company_id", company_id).execute()
+            except Exception:
+                pass
 
         # Process removed
-        for txn in resp.get("removed", []):
-            prov_id = txn.get("transaction_id")
-            supabase.table("bank_transactions").delete().eq("provider_transaction_id", prov_id).eq("company_id", company_id).execute()
+        for txn in _plaid_get(resp, "removed", []):
+            prov_id = _plaid_get(txn, "transaction_id")
+            try:
+                supabase.table("bank_transactions").delete().eq("provider_transaction_id", prov_id).eq("company_id", company_id).execute()
+            except Exception:
+                pass
 
-        cursor = resp.get("next_cursor")
-        has_more = bool(resp.get("has_more", False))
+        cursor = _plaid_get(resp, "next_cursor")
+        has_more = bool(_plaid_get(resp, "has_more", False))
 
-    # Save updated cursor
-    supabase.table("bank_connections").update({
-        "sync_cursor": cursor,
-        "last_sync_at": datetime.utcnow().isoformat(),
-    }).eq("id", connection_id).execute()
+    # Save updated cursor (only if sync_cursor column exists — migration 008)
+    try:
+        supabase.table("bank_connections").update({
+            "sync_cursor": cursor,
+            "last_sync_at": datetime.utcnow().isoformat(),
+        }).eq("id", connection_id).execute()
+    except Exception:
+        # sync_cursor column may not exist yet; update last_sync_at only
+        try:
+            supabase.table("bank_connections").update({
+                "last_sync_at": datetime.utcnow().isoformat(),
+            }).eq("id", connection_id).execute()
+        except Exception:
+            pass
 
     return added_count
 
@@ -256,9 +477,10 @@ def sync_connection(connection_id: str, auth: Dict[str, str] = Depends(get_curre
     conn = supabase.table("bank_connections").select("provider_access_token, status").eq("id", connection_id).eq("company_id", company_id).single().execute()
     if not conn.data:
         raise HTTPException(status_code=404, detail="Connection not found")
-    access_token = conn.data.get("provider_access_token")
-    if not access_token:
+    raw_token = conn.data.get("provider_access_token")
+    if not raw_token:
         raise HTTPException(status_code=400, detail="No access token for this connection")
+    access_token = decrypt_token(raw_token)
     count = _sync_transactions(connection_id, access_token, company_id)
 
     # Also refresh balances
@@ -272,12 +494,20 @@ def _refresh_balances(connection_id: str, access_token: str, company_id: str):
     client = _plaid_client()
     try:
         resp = client.accounts_balance_get(AccountsBalanceGetRequest(access_token=access_token))
-        for acct in resp.get("accounts", []):
-            balances = acct.get("balances", {})
-            supabase.table("bank_accounts").update({
-                "balance_current": float(balances.get("current") or 0),
-                "balance_available": float(balances.get("available") or 0) if balances.get("available") is not None else None,
-            }).eq("provider_account_id", acct["account_id"]).eq("company_id", company_id).execute()
+        for acct in _plaid_get(resp, "accounts", []):
+            balances = _plaid_get(acct, "balances") or {}
+            bal_current = _plaid_get(balances, "current")
+            bal_available = _plaid_get(balances, "available")
+            update_data = {
+                "balance_current": float(bal_current or 0),
+                "balance_available": float(bal_available) if bal_available is not None else None,
+            }
+            try:
+                supabase.table("bank_accounts").update(update_data).eq(
+                    "provider_account_id", _plaid_get(acct, "account_id")
+                ).eq("company_id", company_id).execute()
+            except Exception:
+                pass
     except Exception:
         pass
 
@@ -303,7 +533,7 @@ def disconnect_connection(connection_id: str, auth: Dict[str, str] = Depends(get
     # Remove from Plaid
     try:
         client = _plaid_client()
-        client.item_remove(ItemRemoveRequest(access_token=conn.data["provider_access_token"]))
+        client.item_remove(ItemRemoveRequest(access_token=decrypt_token(conn.data["provider_access_token"])))
     except Exception:
         pass  # still remove from DB even if Plaid call fails
 

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import {
   Landmark, Plus, RefreshCw, ChevronRight, ChevronLeft,
   AlertTriangle, CheckCircle2, X, ExternalLink, Search,
-  ChevronDown, Loader2,
+  ChevronDown, Loader2, Sparkles, ThumbsUp, ThumbsDown,
 } from 'lucide-react'
 import { usePlaidLink } from 'react-plaid-link'
 import { api } from '@/lib/api'
@@ -37,6 +37,7 @@ interface BankTransaction {
   is_outflow: boolean
   plaid_category: string[]
   user_selected_account_id: string | null
+  suggested_account_id?: string | null
   memo: string | null
   bank_accounts?: { name: string; mask: string | null; institution_name: string | null } | null
 }
@@ -348,6 +349,7 @@ export default function BankingPage() {
   const [postingTxn, setPostingTxn] = useState<BankTransaction | null>(null)
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [linkLoading, setLinkLoading] = useState(false)
+  const [categorizing, setCategorizing] = useState(false)
   const [toast, setToast] = useState<{ msg: string; type: 'success' | 'error' } | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -455,6 +457,44 @@ export default function BankingPage() {
     showToast('Transaction excluded')
   }
 
+  async function handleAutoCategorize() {
+    setCategorizing(true)
+    try {
+      const params = selectedAccountId ? `?bank_account_id=${selectedAccountId}` : ''
+      const res = await api.post(`/bank/transactions/auto-categorize${params}`)
+      const { auto_applied = 0, suggested = 0 } = res
+      showToast(`AI categorized ${auto_applied + suggested} transactions — ${auto_applied} applied, ${suggested} need review`)
+      await loadTransactions()
+    } catch (e: any) {
+      showToast(e?.response?.data?.detail || 'Auto-categorize failed', 'error')
+    } finally {
+      setCategorizing(false)
+    }
+  }
+
+  async function handleAcceptSuggestion(txnId: string) {
+    try {
+      await api.post(`/bank/transactions/${txnId}/accept-suggestion`)
+      setTransactions(ts => ts.map(t =>
+        t.id === txnId ? { ...t, user_selected_account_id: t.suggested_account_id || t.user_selected_account_id, suggested_account_id: null } : t
+      ))
+      showToast('Suggestion accepted')
+    } catch (e: any) {
+      showToast(e?.response?.data?.detail || 'Failed to accept', 'error')
+    }
+  }
+
+  async function handleRejectSuggestion(txnId: string) {
+    try {
+      await api.post(`/bank/transactions/${txnId}/reject-suggestion`)
+      setTransactions(ts => ts.map(t =>
+        t.id === txnId ? { ...t, suggested_account_id: null } : t
+      ))
+    } catch (e: any) {
+      showToast(e?.response?.data?.detail || 'Failed to reject', 'error')
+    }
+  }
+
   async function handlePost(txnId: string, accountId: string, memo: string, bankGlId: string) {
     try {
       const res = await api.post(`/bank/transactions/${txnId}/post`, { account_id: accountId, bank_gl_id: bankGlId, memo })
@@ -529,8 +569,8 @@ export default function BankingPage() {
                 <Landmark className="w-8 h-8 mb-3" style={{ color: 'var(--text-muted)' }} />
                 <p className="text-sm font-medium" style={{ color: 'var(--text-secondary)' }}>No bank accounts connected</p>
                 <p className="text-xs mt-1 mb-4" style={{ color: 'var(--text-muted)' }}>Link your bank to automatically import transactions</p>
-                <button onClick={fetchLinkToken} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg" style={{ background: 'var(--neon-cyan)', color: '#000' }}>
-                  <Plus className="w-4 h-4" /> Link Account
+                <button onClick={fetchLinkToken} disabled={linkLoading} className="flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg disabled:opacity-60" style={{ background: 'var(--neon-cyan)', color: '#000' }}>
+                  {linkLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Link Account
                 </button>
               </div>
             ) : (
@@ -591,17 +631,28 @@ export default function BankingPage() {
               })}
             </div>
 
-            <div className="flex items-center gap-2 flex-1 max-w-xs">
-              <div className="relative flex-1">
+            <div className="flex items-center gap-2">
+              <div className="relative">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
                 <input
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search transactions..."
-                  className="w-full pl-8 pr-3 py-2 text-xs rounded-lg outline-none"
+                  className="w-56 pl-8 pr-3 py-2 text-xs rounded-lg outline-none"
                   style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}
                 />
               </div>
+              {tab === 'pending' && (
+                <button
+                  onClick={handleAutoCategorize}
+                  disabled={categorizing}
+                  className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg transition-all disabled:opacity-60"
+                  style={{ background: 'rgba(217,70,239,0.12)', color: 'var(--neon-fuchsia)', border: '1px solid rgba(217,70,239,0.3)' }}
+                >
+                  {categorizing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                  {categorizing ? 'Categorizing…' : 'Auto-categorize'}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -653,6 +704,8 @@ export default function BankingPage() {
                       onCategorize={handleCategorize}
                       onExclude={handleExclude}
                       onPost={() => setPostingTxn(txn)}
+                      onAcceptSuggestion={handleAcceptSuggestion}
+                      onRejectSuggestion={handleRejectSuggestion}
                     />
                   ))}
                 </tbody>
@@ -679,7 +732,7 @@ export default function BankingPage() {
 // ── Transaction Row ────────────────────────────────────────────────
 
 function TransactionRow({
-  txn, tab, glAccounts, onCategorize, onExclude, onPost,
+  txn, tab, glAccounts, onCategorize, onExclude, onPost, onAcceptSuggestion, onRejectSuggestion,
 }: {
   txn: BankTransaction
   tab: string
@@ -687,6 +740,8 @@ function TransactionRow({
   onCategorize: (id: string, accountId: string) => void
   onExclude: (id: string) => void
   onPost: () => void
+  onAcceptSuggestion: (id: string) => void
+  onRejectSuggestion: (id: string) => void
 }) {
   const [hovered, setHovered] = useState(false)
 
@@ -736,11 +791,40 @@ function TransactionRow({
       {/* Category */}
       <td className="px-4 py-3">
         {tab !== 'excluded' && tab !== 'posted' ? (
-          <CategorySelect
-            value={txn.user_selected_account_id}
-            glAccounts={glAccounts}
-            onChange={(id) => onCategorize(txn.id, id)}
-          />
+          <div className="flex flex-col gap-1.5">
+            <CategorySelect
+              value={txn.user_selected_account_id}
+              glAccounts={glAccounts}
+              onChange={(id) => onCategorize(txn.id, id)}
+            />
+            {txn.suggested_account_id && !txn.user_selected_account_id && (
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full"
+                  style={{ background: 'rgba(217,70,239,0.1)', color: 'var(--neon-fuchsia)', border: '1px solid rgba(217,70,239,0.25)' }}
+                >
+                  <Sparkles className="w-2.5 h-2.5" />
+                  {glAccounts.find(a => a.id === txn.suggested_account_id)?.account_name || 'AI suggestion'}
+                </span>
+                <button
+                  onClick={() => onAcceptSuggestion(txn.id)}
+                  title="Accept suggestion"
+                  className="p-0.5 rounded transition-opacity hover:opacity-70"
+                  style={{ color: 'var(--neon-emerald)' }}
+                >
+                  <ThumbsUp className="w-3 h-3" />
+                </button>
+                <button
+                  onClick={() => onRejectSuggestion(txn.id)}
+                  title="Reject suggestion"
+                  className="p-0.5 rounded transition-opacity hover:opacity-70"
+                  style={{ color: '#f87171' }}
+                >
+                  <ThumbsDown className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+          </div>
         ) : (
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
             {glAccounts.find(a => a.id === txn.user_selected_account_id)?.account_name || '—'}

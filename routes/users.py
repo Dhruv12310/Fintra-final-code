@@ -3,7 +3,7 @@ from typing import Literal, Dict
 from fastapi import APIRouter, HTTPException, Depends
 from database import table
 from pydantic import BaseModel, EmailStr
-from middleware.auth import require_min_role
+from middleware.auth import require_min_role, get_current_user_company, verify_token
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -180,68 +180,157 @@ def record_auth_attempt(payload: AuthAttemptsRecordRequest):
     }
 
 
-# Get all users
+# Get all users in caller's company (admin+)
 @router.get("/")
-def get_all_users():
+def get_all_users(auth: Dict[str, str] = Depends(require_min_role("admin"))):
     try:
-        response = table("users").select("*").execute()
+        response = (
+            table("users")
+            .select("id, company_id, email, full_name, role, created_at")
+            .eq("company_id", auth["company_id"])
+            .execute()
+        )
         return {"status": "success", "data": response.data}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Get a user by ID
-@router.get("/{user_id}")
-def get_user(user_id: str):
+@router.get("/me")
+def get_me(auth: Dict[str, str] = Depends(get_current_user_company)):
+    """Return the current authenticated user's profile."""
     try:
-        response = table("users").select("*").eq("id", user_id).execute()
+        response = table("users").select("id, company_id, email, full_name, role, created_at").eq("id", auth["user_id"]).execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="User not found.")
+        return response.data[0]
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Get a single user — self always allowed; cross-user requires admin of same company
+@router.get("/{user_id}")
+def get_user(user_id: str, auth_user_id: str = Depends(verify_token)):
+    try:
+        # Self-read: always allowed, no company required (used by AuthContext on load)
+        if auth_user_id == user_id:
+            response = table("users").select("id, company_id, email, full_name, role, created_at").eq("id", user_id).execute()
+            if not response.data:
+                raise HTTPException(status_code=404, detail="User not found.")
+            return {"status": "success", "data": response.data[0]}
+
+        # Cross-user read: must be admin/accountant of the same company
+        auth_resp = table("users").select("id, company_id, role").eq("id", auth_user_id).limit(1).execute()
+        if not auth_resp.data or not auth_resp.data[0].get("company_id"):
+            raise HTTPException(status_code=403, detail="Cannot view other users")
+        actor = auth_resp.data[0]
+        actor_role = (actor.get("role") or "user").lower()
+        if actor_role not in ("owner", "admin", "accountant"):
+            raise HTTPException(status_code=403, detail="Cannot view other users")
+        response = (
+            table("users")
+            .select("id, company_id, email, full_name, role, created_at")
+            .eq("id", user_id)
+            .eq("company_id", actor["company_id"])
+            .execute()
+        )
         if not response.data:
             raise HTTPException(status_code=404, detail="User not found.")
         return {"status": "success", "data": response.data[0]}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Create a new user
+# Create a user — self-registration during signup (JWT required, can only create own row)
 @router.post("/")
-def create_user(user: dict):
+def create_user(user: dict, auth_user_id: str = Depends(verify_token)):
     try:
+        # Allow creating own row only (self-registration during onboarding)
+        if user.get("id") and user["id"] != auth_user_id:
+            raise HTTPException(status_code=403, detail="Cannot create user record for another user")
+        user["id"] = auth_user_id
+        user.pop("company_id", None)  # company_id is assigned during onboarding
+
+        # Idempotent: if the row already exists, return it rather than 500-ing on the
+        # unique constraint. This happens when signIn retries after a race condition.
+        existing = table("users").select("*").eq("id", auth_user_id).limit(1).execute()
+        if existing.data:
+            return {"status": "success", "data": existing.data}
+
         response = table("users").insert(user).execute()
         return {"status": "success", "data": response.data}
+    except HTTPException:
+        raise
     except Exception as e:
+        err_str = str(e).lower()
+        if "duplicate" in err_str or "unique" in err_str or "already exists" in err_str:
+            # Race condition: row was created between the check and the insert — that's fine
+            return {"status": "success", "data": []}
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Update a user
+# Update a user — self can update own profile; admin/owner can update same-company members
 @router.patch("/{user_id}")
-def update_user(user_id: str, update_data: dict):
+def update_user(user_id: str, update_data: dict, auth: Dict[str, str] = Depends(get_current_user_company)):
     try:
-        response = table("users").update(update_data).eq("id", user_id).execute()
+        actor_role = (auth.get("role") or "user").lower()
+        if auth["user_id"] != user_id and actor_role not in ("owner", "admin"):
+            raise HTTPException(status_code=403, detail="Cannot update other users")
+        # Role and company changes must go through dedicated endpoints
+        update_data.pop("role", None)
+        update_data.pop("company_id", None)
+        response = (
+            table("users")
+            .update(update_data)
+            .eq("id", user_id)
+            .eq("company_id", auth["company_id"])
+            .execute()
+        )
         if not response.data:
             raise HTTPException(status_code=404, detail="User not found.")
         return {"status": "success", "data": response.data}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Delete a user
+# Delete a user from caller's company (admin+, cannot self-delete)
 @router.delete("/{user_id}")
-def delete_user(user_id: str):
+def delete_user(user_id: str, auth: Dict[str, str] = Depends(require_min_role("admin"))):
     try:
-        response = table("users").delete().eq("id", user_id).execute()
+        if auth["user_id"] == user_id:
+            raise HTTPException(status_code=400, detail="Cannot delete your own account")
+        response = (
+            table("users")
+            .delete()
+            .eq("id", user_id)
+            .eq("company_id", auth["company_id"])
+            .execute()
+        )
         return {"status": "success", "message": f"User {user_id} deleted successfully."}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Create a new user linked to a specific company
+# Create a user linked to a company (admin+ of that company only)
 @router.post("/company/{company_id}")
-def create_user_for_company(company_id: str, user: dict):
-    """Create a new user and automatically link them to a company."""
+def create_user_for_company(company_id: str, user: dict, auth: Dict[str, str] = Depends(require_min_role("admin"))):
+    """Create a new user linked to the caller's company."""
     try:
+        if auth["company_id"] != company_id:
+            raise HTTPException(status_code=403, detail="Cannot create users for another company")
         user["company_id"] = company_id
+        user.pop("role", None)
         response = table("users").insert(user).execute()
         return {"status": "success", "data": response.data}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating user: {e}")
 

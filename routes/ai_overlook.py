@@ -100,6 +100,8 @@ def get_ai_suggestions(company_id: str, vendor_name: str, amount: float, date: s
     Falls back to basic rules if OPENAI_API_KEY is not set.
     """
     openai_key = os.getenv("OPENAI_API_KEY", "")
+    if openai_key.startswith("sk-your"):
+        openai_key = ""
 
     # If OpenAI key is available, use it
     if openai_key:
@@ -254,14 +256,18 @@ async def ai_query(
         if not question:
             raise HTTPException(status_code=400, detail="question is required")
 
-        # Check for Perplexity key (primary) or OpenAI key (fallback)
+        # Check for Perplexity key (primary), Anthropic (secondary), or OpenAI key (fallback)
         perplexity_key = os.getenv("PERPLEXITY_API_KEY", "")
+        anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
         openai_key = os.getenv("OPENAI_API_KEY", "")
+        # Reject obvious placeholder values
+        if openai_key.startswith("sk-your") or openai_key == "":
+            openai_key = ""
 
-        if not perplexity_key and not openai_key:
+        if not perplexity_key and not anthropic_key and not openai_key:
             raise HTTPException(
                 status_code=503,
-                detail="AI assistant requires PERPLEXITY_API_KEY or OPENAI_API_KEY to be configured."
+                detail="AI assistant requires PERPLEXITY_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY to be configured."
             )
 
         # ========== Fetch company profile ==========
@@ -582,25 +588,38 @@ Answer with ONLY information from the data above. If data is insufficient, say s
                     answer = clean_ai_response(raw_answer)
 
         else:
-            # Fallback to OpenAI (limited - no web search)
-            print(f"[AI] Using OpenAI fallback (no web search)")
-            from openai import OpenAI
-            openai_client = OpenAI(api_key=openai_key)
-
-            system_prompt = "You are a business and financial advisor. Provide clear, actionable advice. Use plain text only."
-            user_prompt = f"{financial_context}\n\nQUESTION: {question}\n\nProvide helpful advice even if financial data is limited. Use plain text only."
-
-            response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.3,
-                max_tokens=600
-            )
-
-            answer = response.choices[0].message.content
+            # Fallback to Anthropic (no web search)
+            if anthropic_key:
+                print(f"[AI] Using Anthropic fallback (no web search)")
+                import anthropic as _anthropic
+                ant_client = _anthropic.Anthropic(api_key=anthropic_key)
+                system_msg = "You are a business and financial advisor. Provide clear, actionable advice. Use plain text only."
+                user_msg = f"{financial_context}\n\nQUESTION: {question}\n\nProvide helpful advice even if financial data is limited. Use plain text only."
+                ant_response = ant_client.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=600,
+                    system=system_msg,
+                    messages=[{"role": "user", "content": user_msg}],
+                )
+                answer = ant_response.content[0].text
+            elif openai_key:
+                print(f"[AI] Using OpenAI fallback (no web search)")
+                from openai import OpenAI
+                openai_client = OpenAI(api_key=openai_key)
+                system_prompt = "You are a business and financial advisor. Provide clear, actionable advice. Use plain text only."
+                user_prompt = f"{financial_context}\n\nQUESTION: {question}\n\nProvide helpful advice even if financial data is limited. Use plain text only."
+                response = openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=600
+                )
+                answer = response.choices[0].message.content
+            else:
+                answer = "No AI provider configured. Please set ANTHROPIC_API_KEY or OPENAI_API_KEY."
 
         return {
             "answer": answer.strip(),
@@ -649,7 +668,7 @@ async def financial_summary(auth: Dict[str, str] = Depends(require_min_role("acc
 
         # Overdue invoices
         today = datetime.now().strftime("%Y-%m-%d")
-        inv_resp = table("invoices").select("status, total_amount").eq("company_id", company_id).execute()
+        inv_resp = table("invoices").select("status, total, due_date").eq("company_id", company_id).execute()
         invoices = inv_resp.data or []
         overdue = [i for i in invoices if i.get("status") not in ("paid", "void") and i.get("due_date", "") and i["due_date"] < today]
 
@@ -665,7 +684,7 @@ async def financial_summary(auth: Dict[str, str] = Depends(require_min_role("acc
             parts.append(f"Total assets ${assets:,.0f}, liabilities ${liabilities:,.0f}.")
 
         if overdue:
-            total_overdue = sum(float(i.get("total_amount") or 0) for i in overdue)
+            total_overdue = sum(float(i.get("total") or 0) for i in overdue)
             parts.append(f"{len(overdue)} overdue invoice{'s' if len(overdue) > 1 else ''} totalling ${total_overdue:,.0f}.")
 
         if draft_count > 0:

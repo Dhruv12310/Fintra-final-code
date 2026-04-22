@@ -83,7 +83,7 @@ function KpiSkeleton() {
 // ── KPI Card with count-up ─────────────────────────────────────────
 
 function KpiCard({
-  label, value, prior, favorable = true, suffix, children, glowColor,
+  label, value, prior, favorable = true, suffix, children,
 }: {
   label: string
   value: number
@@ -99,33 +99,64 @@ function KpiCard({
   const change = prior !== undefined ? pctChange(value, prior) : null
   const isGood = change !== null ? (favorable ? change >= 0 : change <= 0) : null
   const ChangeIcon = change !== null ? (change >= 0 ? ArrowUpRight : ArrowDownRight) : null
-  const glow = glowColor || 'var(--neon-cyan)'
 
   return (
     <div
       ref={ref}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      className="rounded-lg p-4 flex flex-col gap-1"
+      className="flex flex-col gap-1.5 relative overflow-hidden"
       style={{
         background: 'var(--bg-card)',
-        border: `1px solid ${hovered ? glow : 'var(--border-color)'}`,
-        transition: 'opacity 0.5s ease, transform 0.5s ease, border-color 0.2s ease, box-shadow 0.2s ease',
+        border: `1px solid ${hovered ? 'var(--border-strong)' : 'var(--border-color)'}`,
+        borderRadius: 10,
+        padding: '16px 18px',
+        transition: 'opacity 0.5s ease, transform 0.5s ease, border-color 0.15s ease, box-shadow 0.15s ease',
         opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0) translateX(0)' : 'translateY(12px)',
-        boxShadow: hovered ? `0 0 20px ${glow}1a` : 'none',
+        transform: visible ? 'translateY(0)' : 'translateY(12px)',
+        boxShadow: hovered ? 'var(--shadow-md)' : 'var(--shadow-xs)',
       }}
     >
-      <p className="text-xs uppercase tracking-wider font-medium" style={{ color: 'var(--text-muted)' }}>{label}</p>
-      <p className="text-2xl font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>
-        {$(animated)}{suffix && <span className="text-sm font-normal ml-1" style={{ color: 'var(--text-muted)' }}>{suffix}</span>}
+      <p
+        className="font-semibold uppercase"
+        style={{ color: 'var(--text-muted)', fontSize: 10.5, letterSpacing: '0.08em' }}
+      >
+        {label}
+      </p>
+      <p
+        className="num-display"
+        style={{
+          color: 'var(--text-primary)',
+          fontSize: 26,
+          lineHeight: 1.15,
+          fontWeight: 600,
+        }}
+      >
+        {$(animated)}
+        {suffix && (
+          <span
+            className="ml-1 font-normal"
+            style={{ color: 'var(--text-muted)', fontSize: 13 }}
+          >
+            {suffix}
+          </span>
+        )}
       </p>
       {children}
       {change !== null && ChangeIcon && (
         <div className="flex items-center gap-1 mt-0.5">
-          <ChangeIcon className="w-3.5 h-3.5" style={{ color: isGood ? 'var(--neon-emerald)' : '#f87171' }} />
-          <span className="text-xs font-medium" style={{ color: isGood ? 'var(--neon-emerald)' : '#f87171' }}>
-            {Math.abs(change).toFixed(1)}% vs prior period
+          <ChangeIcon
+            className="w-3.5 h-3.5"
+            style={{ color: isGood ? 'var(--positive)' : 'var(--negative)' }}
+          />
+          <span
+            className="text-xs font-medium num"
+            style={{ color: isGood ? 'var(--positive)' : 'var(--negative)' }}
+          >
+            {Math.abs(change).toFixed(1)}%
+          </span>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            vs prior period
           </span>
         </div>
       )}
@@ -250,7 +281,7 @@ export default function NewDashboard() {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
         <p style={{ color: 'var(--text-muted)' }}>No company found. Complete onboarding first.</p>
-        <Link href="/onboarding" className="text-sm font-semibold px-4 py-2 rounded-lg" style={{ background: 'var(--neon-fuchsia)', color: '#fff' }}>Go to Onboarding</Link>
+        <Link href="/onboarding" className="text-sm font-semibold px-4 py-2 rounded-lg" style={{ background: 'var(--accent)', color: '#fff' }}>Go to Onboarding</Link>
       </div>
     )
   }
@@ -273,7 +304,7 @@ export default function NewDashboard() {
   if (error && !data) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-3">
-        <AlertCircle className="w-8 h-8" style={{ color: '#f87171' }} />
+        <AlertCircle className="w-8 h-8" style={{ color: 'var(--negative)' }} />
         <p style={{ color: 'var(--text-secondary)' }}>{error}</p>
         <button onClick={() => fetchData()} className="flex items-center gap-2 text-sm px-4 py-2 rounded-lg" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
           <RefreshCw className="w-4 h-4" /> Retry
@@ -292,51 +323,83 @@ export default function NewDashboard() {
     <div className="p-6 space-y-4 min-h-screen" style={{ color: 'var(--text-primary)', opacity: transitioning ? 0.6 : 1, transition: 'opacity 0.2s ease' }}>
 
       {/* ── Header ── */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-start justify-between gap-4 mb-2">
         <div>
-          <p className="text-xs uppercase tracking-widest font-medium" style={{ color: 'var(--text-muted)' }}>Financial Cockpit</p>
-          <h1 className="text-xl font-bold mt-0.5">Dashboard</h1>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            {fmtDate(data.period.start)} → {fmtDate(data.period.end)}
+          <p
+            className="font-semibold uppercase"
+            style={{ color: 'var(--text-muted)', fontSize: 10.5, letterSpacing: '0.08em' }}
+          >
+            Overview
+          </p>
+          <h1
+            className="mt-1"
+            style={{
+              fontSize: 22,
+              fontWeight: 600,
+              letterSpacing: '-0.02em',
+              color: 'var(--text-primary)',
+            }}
+          >
+            Dashboard
+          </h1>
+          <p className="text-xs mt-0.5 num" style={{ color: 'var(--text-muted)' }}>
+            {fmtDate(data.period.start)} — {fmtDate(data.period.end)}
           </p>
         </div>
-        <div className="flex items-center gap-3 flex-wrap justify-end">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
           <button
             onClick={() => setWidgetModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg transition-all"
+            className="flex items-center gap-1.5 text-xs font-medium rounded-md transition-colors"
             style={{
               background: 'var(--bg-card)',
               border: '1px solid var(--border-color)',
               color: 'var(--text-secondary)',
+              padding: '6px 10px',
+              height: 30,
             }}
             onMouseEnter={e => {
               const el = e.currentTarget
-              el.style.borderColor = 'var(--neon-cyan)'
-              el.style.color = 'var(--neon-cyan)'
+              el.style.background = 'var(--bg-muted)'
+              el.style.color = 'var(--text-primary)'
             }}
             onMouseLeave={e => {
               const el = e.currentTarget
-              el.style.borderColor = 'var(--border-color)'
+              el.style.background = 'var(--bg-card)'
               el.style.color = 'var(--text-secondary)'
             }}
           >
-            <Plus className="w-3.5 h-3.5" /> Add Widget
+            <Plus className="w-3.5 h-3.5" /> Add widget
           </button>
-          <div className="flex rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-color)' }}>
-            {PERIODS.map((p, i) => (
-              <button
-                key={p.key}
-                onClick={() => setPeriod(p.key)}
-                className="px-3 py-1.5 text-xs font-medium transition-all"
-                style={{
-                  background: period === p.key ? 'var(--neon-fuchsia)' : 'var(--bg-card)',
-                  color: period === p.key ? '#fff' : 'var(--text-muted)',
-                  borderLeft: i > 0 ? '1px solid var(--border-color)' : 'none',
-                }}
-              >
-                {p.label}
-              </button>
-            ))}
+          {/* Segmented period control */}
+          <div
+            className="inline-flex items-center rounded-md"
+            style={{
+              background: 'var(--bg-muted)',
+              border: '1px solid var(--border-color)',
+              padding: 2,
+              height: 30,
+            }}
+          >
+            {PERIODS.map((p) => {
+              const active = period === p.key
+              return (
+                <button
+                  key={p.key}
+                  onClick={() => setPeriod(p.key)}
+                  className="text-xs font-medium transition-all rounded"
+                  style={{
+                    background: active ? 'var(--bg-card)' : 'transparent',
+                    color: active ? 'var(--text-primary)' : 'var(--text-muted)',
+                    padding: '0 10px',
+                    height: 24,
+                    border: active ? '1px solid var(--border-color)' : '1px solid transparent',
+                    boxShadow: active ? 'var(--shadow-xs)' : 'none',
+                  }}
+                >
+                  {p.label}
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>
@@ -344,30 +407,47 @@ export default function NewDashboard() {
       {/* ── KPI Cards + Bank Accounts ── */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <div className="xl:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-3">
-          <KpiCard label="Revenue" value={kpis.revenue.current} prior={kpis.revenue.prior} favorable glowColor="var(--neon-emerald)" />
-          <KpiCard label="Expenses" value={kpis.expenses.current} prior={kpis.expenses.prior} favorable={false} glowColor="var(--neon-fuchsia)" />
-          <KpiCard label="Net Profit" value={kpis.net_profit.current} prior={kpis.net_profit.prior} favorable glowColor="var(--neon-cyan)">
+          <KpiCard label="Revenue" value={kpis.revenue.current} prior={kpis.revenue.prior} favorable />
+          <KpiCard label="Expenses" value={kpis.expenses.current} prior={kpis.expenses.prior} favorable={false} />
+          <KpiCard label="Net Profit" value={kpis.net_profit.current} prior={kpis.net_profit.prior} favorable>
             {kpis.revenue.current > 0 && (
-              <p className="text-xs tabular-nums" style={{ color: 'var(--text-muted)' }}>
+              <p className="text-xs num" style={{ color: 'var(--text-muted)' }}>
                 {((kpis.net_profit.current / kpis.revenue.current) * 100).toFixed(1)}% margin
               </p>
             )}
           </KpiCard>
           <KpiCard label="Cash Balance" value={kpis.cash_balance.current} />
-          <div className="col-span-2 md:col-span-1 rounded-lg p-4 flex flex-col gap-1" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
-            <p className="text-xs uppercase tracking-wider font-medium" style={{ color: 'var(--text-muted)' }}>Receivables / Payables</p>
-            <div className="space-y-1 mt-1">
+          <div
+            className="col-span-2 md:col-span-1 flex flex-col gap-1.5"
+            style={{
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 10,
+              padding: '16px 18px',
+              boxShadow: 'var(--shadow-xs)',
+            }}
+          >
+            <p
+              className="font-semibold uppercase"
+              style={{ color: 'var(--text-muted)', fontSize: 10.5, letterSpacing: '0.08em' }}
+            >
+              Receivables / Payables
+            </p>
+            <div className="space-y-1.5 mt-1">
               <div className="flex justify-between text-sm">
                 <span style={{ color: 'var(--text-muted)' }}>AR</span>
-                <span className="font-semibold tabular-nums" style={{ color: 'var(--neon-emerald)' }}>{$(kpis.ar_outstanding)}</span>
+                <span className="font-semibold num" style={{ color: 'var(--text-primary)' }}>{$(kpis.ar_outstanding)}</span>
               </div>
               <div className="flex justify-between text-sm">
                 <span style={{ color: 'var(--text-muted)' }}>AP</span>
-                <span className="font-semibold tabular-nums" style={{ color: '#f87171' }}>{$(kpis.ap_outstanding)}</span>
+                <span className="font-semibold num" style={{ color: 'var(--text-primary)' }}>{$(kpis.ap_outstanding)}</span>
               </div>
-              <div className="flex justify-between text-sm border-t pt-1 mt-1" style={{ borderColor: 'var(--border-color)' }}>
+              <div className="flex justify-between text-sm pt-2 mt-1" style={{ borderTop: '1px solid var(--border-color)' }}>
                 <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>Net</span>
-                <span className="font-bold tabular-nums" style={{ color: kpis.ar_outstanding - kpis.ap_outstanding >= 0 ? 'var(--neon-emerald)' : '#f87171' }}>
+                <span
+                  className="font-semibold num"
+                  style={{ color: kpis.ar_outstanding - kpis.ap_outstanding >= 0 ? 'var(--positive)' : 'var(--negative)' }}
+                >
                   {$(kpis.ar_outstanding - kpis.ap_outstanding)}
                 </span>
               </div>

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, File, UploadFile, HTTPException
-from smart_parser import smart_extract
+from lib.smart_parser import smart_extract
 import os
 import json
 

@@ -1,25 +1,38 @@
-# Core: pip install -r requirements.txt then run: .venv/bin/uvicorn main:app --reload --port 8000
+# Web Framework
 fastapi==0.109.0
 uvicorn[standard]==0.27.0
-python-dotenv==1.0.0
+python-multipart==0.0.6
+starlette>=0.36.0
 
 # Database
 supabase==2.9.0
 
-# Auth & Security
+# Authentication & Security
 python-jose[cryptography]==3.3.0
-python-multipart==0.0.6
+cryptography>=42.0.0
 
-# HTTP
+# HTTP Clients
 httpx==0.27.0
 requests==2.31.0
 
 # AI
-openai==1.10.0
+anthropic>=0.30.0
+openai>=1.10.0
 
-# Data (pydantic 2.10+ has Python 3.13 wheels)
+# Data Validation
 pydantic>=2.10.0,<3
+email-validator>=2.0.0
+
+# Banking
+plaid-python>=14.0.0
+
+# Document Processing & OCR
+pdfminer.six>=20221105
+pdf2image>=1.17.0
+Pillow>=11.0.0
+easyocr>=1.7.0
+pandas>=2.0.0
 
 # Utilities
+python-dotenv==1.0.0
 python-dateutil==2.8.2
-Pillow>=11.0.0

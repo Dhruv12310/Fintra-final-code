@@ -111,19 +111,25 @@ def save_widget_preferences(payload: dict, auth: Dict[str, str] = Depends(get_cu
     company_id = auth["company_id"]
     user_id = auth.get("user_id", "")
     widgets = payload.get("widgets", [])
+    saved = 0
+    errors: list = []
     for w in widgets:
-        supabase.table("dashboard_widgets").upsert(
-            {
-                "company_id": company_id,
-                "user_id": user_id,
-                "widget_id": w["widget_id"],
-                "position": w.get("position", 0),
-                "is_visible": w.get("is_visible", True),
-                "config": w.get("config", {}),
-            },
-            on_conflict="company_id,user_id,widget_id",
-        ).execute()
-    return {"ok": True}
+        try:
+            supabase.table("dashboard_widgets").upsert(
+                {
+                    "company_id": company_id,
+                    "user_id": user_id,
+                    "widget_id": w["widget_id"],
+                    "position": w.get("position", 0),
+                    "is_visible": w.get("is_visible", True),
+                    "config": w.get("config", {}),
+                },
+                on_conflict="company_id,user_id,widget_id",
+            ).execute()
+            saved += 1
+        except Exception as e:
+            errors.append({"widget_id": w.get("widget_id"), "error": str(e)})
+    return {"ok": not errors, "saved": saved, "errors": errors}
 
 
 def _fetch_ap_aging(company_id: str, today: date) -> dict:
@@ -155,10 +161,90 @@ def _fetch_ap_aging(company_id: str, today: date) -> dict:
     return {k: round(v, 2) for k, v in buckets.items()}
 
 
+def _fetch_ap_aging_rich(company_id: str, today: date) -> dict:
+    """AP aging with count + total per bucket for the AP aging widget."""
+    bills = (
+        supabase.table("bills")
+        .select("balance_due, due_date, status, bill_number, contacts(display_name)")
+        .eq("company_id", company_id)
+        .execute()
+        .data or []
+    )
+    open_bills = [b for b in bills if b.get("status") not in ("paid", "void")]
+    keys = ["current", "1_30", "31_60", "61_90", "over_90"]
+    labels = ["Current", "1–30 days", "31–60 days", "61–90 days", "90+ days"]
+    buckets = {k: {"label": l, "count": 0, "total": 0.0} for k, l in zip(keys, labels)}
+    today_str = today.isoformat()
+    total = 0.0
+    for b in open_bills:
+        amt = float(b.get("balance_due") or 0)
+        due = b.get("due_date")
+        total += amt
+        if not due or due >= today_str:
+            buckets["current"]["count"] += 1
+            buckets["current"]["total"] += amt
+        else:
+            days = (today - date.fromisoformat(due)).days
+            if days <= 30:
+                k = "1_30"
+            elif days <= 60:
+                k = "31_60"
+            elif days <= 90:
+                k = "61_90"
+            else:
+                k = "over_90"
+            buckets[k]["count"] += 1
+            buckets[k]["total"] += amt
+    for b in buckets.values():
+        b["total"] = round(b["total"], 2)
+    overdue = round(sum(buckets[k]["total"] for k in ["1_30", "31_60", "61_90", "over_90"]), 2)
+    return {"total_outstanding": round(total, 2), "total_overdue": overdue, "buckets": buckets}
+
+
+def _fetch_ar_aging_rich(company_id: str, today: date) -> dict:
+    """AR aging with count + total per bucket for the receivables aging widget."""
+    invoices = (
+        supabase.table("invoices")
+        .select("balance_due, due_date, status, invoice_number, contacts(display_name)")
+        .eq("company_id", company_id)
+        .execute()
+        .data or []
+    )
+    open_invs = [i for i in invoices if i.get("status") not in ("paid", "void") and float(i.get("balance_due") or 0) > 0]
+    keys = ["current", "1_30", "31_60", "61_90", "over_90"]
+    labels = ["Current", "1–30 days", "31–60 days", "61–90 days", "90+ days"]
+    buckets = {k: {"label": l, "count": 0, "total": 0.0} for k, l in zip(keys, labels)}
+    today_str = today.isoformat()
+    total = 0.0
+    for inv in open_invs:
+        amt = float(inv.get("balance_due") or 0)
+        due = inv.get("due_date")
+        total += amt
+        if not due or due >= today_str:
+            buckets["current"]["count"] += 1
+            buckets["current"]["total"] += amt
+        else:
+            days = (today - date.fromisoformat(due)).days
+            if days <= 30:
+                k = "1_30"
+            elif days <= 60:
+                k = "31_60"
+            elif days <= 90:
+                k = "61_90"
+            else:
+                k = "over_90"
+            buckets[k]["count"] += 1
+            buckets[k]["total"] += amt
+    for b in buckets.values():
+        b["total"] = round(b["total"], 2)
+    overdue = round(sum(buckets[k]["total"] for k in ["1_30", "31_60", "61_90", "over_90"]), 2)
+    return {"total_outstanding": round(total, 2), "total_overdue": overdue, "buckets": buckets}
+
+
 def _fetch_ar_by_customer(company_id: str) -> list:
     invoices = (
         supabase.table("invoices")
-        .select("customer_name, balance_due, status")
+        .select("balance_due, status, contacts(display_name)")
         .eq("company_id", company_id)
         .execute()
         .data or []
@@ -166,8 +252,9 @@ def _fetch_ar_by_customer(company_id: str) -> list:
     open_invs = [i for i in invoices if i.get("status") not in ("paid", "void")]
     by_customer: dict = defaultdict(float)
     for inv in open_invs:
-        name = inv.get("customer_name") or "Unknown"
-        by_customer[name] += float(inv.get("balance_due") or 0)
+        contact = inv.get("contacts") or {}
+        name = contact.get("display_name") if isinstance(contact, dict) else None
+        by_customer[name or "Unknown"] += float(inv.get("balance_due") or 0)
     sorted_cust = sorted(by_customer.items(), key=lambda x: x[1], reverse=True)[:5]
     return [{"customer": name, "amount": round(amt, 2)} for name, amt in sorted_cust]
 
@@ -495,6 +582,10 @@ def get_dashboard_summary(
 
     if "accounts_payable" in active_widgets:
         widget_data["accounts_payable"] = _fetch_ap_aging(company_id, today)
+        widget_data["ap_aging"] = _fetch_ap_aging_rich(company_id, today)
+
+    if "receivables_aging" in active_widgets:
+        widget_data["ar_aging"] = _fetch_ar_aging_rich(company_id, today)
 
     if "accounts_receivable" in active_widgets:
         widget_data["accounts_receivable"] = _fetch_ar_by_customer(company_id)

@@ -36,6 +36,7 @@ export default function ResetPasswordPage() {
 
       // Give auth URL processing a moment before showing link error.
       setTimeout(async () => {
+        if (!supabase) return
         const { data: fresh } = await supabase.auth.getSession()
         if (!fresh?.session && !ready) {
           setError('Invalid or expired reset link. Request a new one.')

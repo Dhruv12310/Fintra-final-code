@@ -36,6 +36,7 @@ export const WIDGET_CATALOG: WidgetCatalogEntry[] = [
   { widget_id: 'profit_and_loss', name: 'Profit & Loss', description: 'Revenue vs expenses for the selected period', chartType: 'Dual Bar', defaultVisible: false, icon: '📉' },
   { widget_id: 'sales', name: 'Sales', description: 'Revenue trend over last 12 months', chartType: 'Line Chart', defaultVisible: false, icon: '🚀' },
   { widget_id: 'ai_analysis', name: 'AI Analysis', description: 'AI-generated financial insights and recommendations', chartType: 'Text Card', defaultVisible: false, icon: '🤖' },
+  { widget_id: 'sentinel_alerts', name: 'Sentinel Alerts', description: 'Proactive GL intelligence — duplicate bills, anomalies, overdue AR', chartType: 'List', defaultVisible: true, icon: '🔔' },
 ]
 
 // ── Helpers ────────────────────────────────────────────────────────
@@ -158,23 +159,33 @@ export function TopExpenseCategoriesWidget({ categories }: { categories: any[] }
 }
 
 export function ReceivablesAgingWidget({ aging }: { aging: any }) {
-  const total = Object.values(aging as Record<string, number>).reduce((s, v) => s + v, 0)
-  const buckets = [
-    { label: 'Current', key: 'current', color: 'var(--neon-emerald)' },
-    { label: '1–30 days', key: 'days_1_30', color: '#fbbf24' },
-    { label: '31–60 days', key: 'days_31_60', color: '#f97316' },
-    { label: '61–90 days', key: 'days_61_90', color: '#ef4444' },
-    { label: '90+ days', key: 'days_90_plus', color: '#b91c1c' },
+  // Support both rich format { total_outstanding, buckets: { current: {total, count}, ... } }
+  // and legacy flat format { current, days_1_30, ... }
+  const isRich = aging && aging.buckets
+  const BUCKET_DEFS = [
+    { label: 'Current', richKey: 'current', flatKey: 'current', color: 'var(--neon-emerald)' },
+    { label: '1–30 days', richKey: '1_30', flatKey: 'days_1_30', color: '#fbbf24' },
+    { label: '31–60 days', richKey: '31_60', flatKey: 'days_31_60', color: '#f97316' },
+    { label: '61–90 days', richKey: '61_90', flatKey: 'days_61_90', color: '#ef4444' },
+    { label: '90+ days', richKey: 'over_90', flatKey: 'days_90_plus', color: '#b91c1c' },
   ]
+  const total = isRich
+    ? (aging.total_outstanding as number)
+    : Object.values(aging as Record<string, number>).reduce((s, v) => s + (v as number), 0)
+
   return total > 0 ? (
     <div className="space-y-2.5">
-      {buckets.map(({ label, key, color }) => {
-        const amt = (aging as any)[key] || 0
+      {BUCKET_DEFS.map(({ label, richKey, flatKey, color }) => {
+        const bucketData = isRich ? aging.buckets[richKey] : null
+        const amt = isRich ? (bucketData?.total ?? 0) : ((aging as any)[flatKey] || 0)
+        const count = isRich ? (bucketData?.count ?? 0) : null
         const pct = total > 0 ? (amt / total) * 100 : 0
         return (
-          <div key={key}>
+          <div key={richKey}>
             <div className="flex justify-between text-xs mb-1">
-              <span style={{ color: 'var(--text-primary)' }}>{label}</span>
+              <span style={{ color: 'var(--text-primary)' }}>
+                {label}{count !== null && count > 0 ? <span className="ml-1 opacity-50">({count})</span> : null}
+              </span>
               <span className="tabular-nums" style={{ color: 'var(--text-muted)' }}>
                 {$(amt)} <span className="opacity-60">({pct.toFixed(0)}%)</span>
               </span>
@@ -189,6 +200,11 @@ export function ReceivablesAgingWidget({ aging }: { aging: any }) {
         <span>Total Outstanding</span>
         <span className="tabular-nums">{$(total)}</span>
       </div>
+      {isRich && aging.total_overdue > 0 && (
+        <p className="text-xs" style={{ color: 'var(--negative)' }}>
+          {$(aging.total_overdue)} overdue
+        </p>
+      )}
     </div>
   ) : (
     <div className="flex flex-col items-center justify-center h-40 gap-2">
@@ -200,10 +216,10 @@ export function ReceivablesAgingWidget({ aging }: { aging: any }) {
 
 export function ActionItemsWidget({ items }: { items: any[] }) {
   const configs: Record<string, { dot: string; text: (i: any) => string }> = {
-    overdue_invoices: { dot: '#f87171', text: (i) => `${i.count} invoice${i.count > 1 ? 's' : ''} overdue (${$(i.amount)})` },
+    overdue_invoices: { dot: 'var(--negative)', text: (i) => `${i.count} invoice${i.count > 1 ? 's' : ''} overdue (${$(i.amount)})` },
     bills_due_soon: { dot: '#fbbf24', text: (i) => `${i.count} bill${i.count > 1 ? 's' : ''} due this week (${$(i.amount)})` },
     draft_entries: { dot: 'var(--neon-cyan)', text: (i) => `${i.count} draft entr${i.count > 1 ? 'ies' : 'y'} need posting` },
-    negative_cash: { dot: '#f87171', text: (i) => `Cash balance is negative (${$(i.amount)})` },
+    negative_cash: { dot: 'var(--negative)', text: (i) => `Cash balance is negative (${$(i.amount)})` },
   }
   return items.length === 0 ? (
     <div className="flex items-center gap-2.5 py-3">
@@ -267,15 +283,25 @@ export function RecentTransactionsWidget({ transactions }: { transactions: any[]
 export function AccountsPayableWidget({ data }: { data: any }) {
   const colors = getChartColors()
   if (!data) return <Skeleton className="h-40 w-full" />
-  const buckets = [
-    { label: 'Current', key: 'current', color: colors.revenue },
-    { label: '1–30 days', key: 'days_1_30', color: colors.warning },
-    { label: '31–60 days', key: 'days_31_60', color: colors.orange },
-    { label: '61–90 days', key: 'days_61_90', color: colors.danger },
-    { label: '90+ days', key: 'days_90_plus', color: '#b91c1c' },
+
+  // Support rich format { total_outstanding, buckets: { current: {total, count}, ... } }
+  // and legacy flat format { current, days_1_30, ... }
+  const isRich = data && data.buckets
+  const BUCKET_DEFS = [
+    { label: 'Current', richKey: 'current', flatKey: 'current', color: colors.revenue },
+    { label: '1–30 days', richKey: '1_30', flatKey: 'days_1_30', color: colors.warning || '#fbbf24' },
+    { label: '31–60 days', richKey: '31_60', flatKey: 'days_31_60', color: colors.orange || '#f97316' },
+    { label: '61–90 days', richKey: '61_90', flatKey: 'days_61_90', color: colors.danger || '#ef4444' },
+    { label: '90+ days', richKey: 'over_90', flatKey: 'days_90_plus', color: '#b91c1c' },
   ]
-  const chartData = buckets.map(b => ({ name: b.label, value: data[b.key] || 0, color: b.color }))
-  const total = chartData.reduce((s, d) => s + d.value, 0)
+  const chartData = BUCKET_DEFS.map(b => ({
+    name: b.label,
+    value: isRich ? (data.buckets[b.richKey]?.total ?? 0) : (data[b.flatKey] || 0),
+    count: isRich ? (data.buckets[b.richKey]?.count ?? 0) : null,
+    color: b.color,
+  }))
+  const total = isRich ? data.total_outstanding : chartData.reduce((s, d) => s + d.value, 0)
+
   return (
     <div className="flex items-center gap-4">
       <ResponsiveContainer width={140} height={140}>
@@ -292,6 +318,9 @@ export function AccountsPayableWidget({ data }: { data: any }) {
             <div className="flex items-center gap-1.5">
               <div className="w-2 h-2 rounded-full" style={{ background: b.color }} />
               <span style={{ color: 'var(--text-secondary)' }}>{b.name}</span>
+              {b.count !== null && b.count > 0 && (
+                <span className="opacity-40" style={{ color: 'var(--text-muted)' }}>({b.count})</span>
+              )}
             </div>
             <span className="tabular-nums font-medium" style={{ color: 'var(--text-primary)' }}>{$(b.value)}</span>
           </div>
@@ -299,6 +328,9 @@ export function AccountsPayableWidget({ data }: { data: any }) {
         <div className="flex justify-between text-xs font-bold pt-1.5 mt-1" style={{ borderTop: '1px solid var(--border-color)', color: 'var(--text-primary)' }}>
           <span>Total AP</span><span className="tabular-nums">{$(total)}</span>
         </div>
+        {isRich && data.total_overdue > 0 && (
+          <p className="text-xs" style={{ color: 'var(--negative)' }}>{$(data.total_overdue)} overdue</p>
+        )}
       </div>
     </div>
   )
@@ -345,7 +377,7 @@ export function InvoicesWidget({ data }: { data: any | null }) {
   const statuses = [
     { key: 'paid', label: 'Paid', color: 'var(--neon-emerald)' },
     { key: 'sent', label: 'Sent', color: 'var(--neon-cyan)' },
-    { key: 'overdue', label: 'Overdue', color: '#f87171' },
+    { key: 'overdue', label: 'Overdue', color: 'var(--negative)' },
     { key: 'draft', label: 'Draft', color: 'var(--text-muted)' },
   ]
   const total = Object.values(data as Record<string, number>).reduce((s, v) => s + v, 0)
@@ -375,7 +407,7 @@ export function InvoicesWidget({ data }: { data: any | null }) {
 export function BillsWidget({ data }: { data: any[] | null }) {
   if (!data) return <Skeleton className="h-32 w-full" />
   const statusColors: Record<string, string> = {
-    paid: 'var(--neon-emerald)', posted: 'var(--neon-cyan)', draft: 'var(--text-muted)', void: '#6b7280', overdue: '#f87171',
+    paid: 'var(--neon-emerald)', posted: 'var(--neon-cyan)', draft: 'var(--text-muted)', void: '#6b7280', overdue: 'var(--negative)',
   }
   return data.length > 0 ? (
     <div className="space-y-1.5">
@@ -451,7 +483,7 @@ export function ProfitAndLossWidget({ data }: { data: any | null }) {
       </ResponsiveContainer>
       <div className="flex justify-between items-center px-1">
         <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Net Profit</span>
-        <span className="text-lg font-bold tabular-nums" style={{ color: data.net >= 0 ? 'var(--neon-emerald)' : '#f87171' }}>{$(data.net)}</span>
+        <span className="text-lg font-bold tabular-nums" style={{ color: data.net >= 0 ? 'var(--neon-emerald)' : 'var(--negative)' }}>{$(data.net)}</span>
       </div>
     </div>
   )
@@ -486,14 +518,63 @@ export function AIAnalysisWidget({
     <div
       className="rounded-lg p-4 space-y-3 text-sm"
       style={{
-        background: 'linear-gradient(135deg, rgba(0,255,255,0.03) 0%, rgba(232,121,249,0.03) 100%)',
-        borderLeft: '3px solid var(--neon-cyan)',
+        background: 'var(--accent-subtle)',
+        border: '1px solid var(--border-color)',
+        borderLeft: '2px solid var(--accent)',
       }}
     >
       <p style={{ color: 'var(--text-muted)' }}>AI financial analysis is available via the AI Insights section.</p>
       <Link href="/ai-insights" className="inline-flex items-center gap-1.5 text-xs font-medium" style={{ color: 'var(--neon-cyan)' }}>
         Open AI Insights <ArrowUpRight className="w-3 h-3" />
       </Link>
+    </div>
+  )
+}
+
+const SEVERITY_DOT: Record<string, string> = {
+  critical: 'var(--negative)',
+  warning: '#f59e0b',
+  info: 'var(--neon-cyan)',
+}
+
+const TRIGGER_SHORT: Record<string, string> = {
+  duplicate_bill: 'Dup. Bill',
+  anomaly_txn: 'Anomaly',
+  overdue_invoice: 'Overdue AR',
+}
+
+export function SentinelAlertsWidget({ alerts }: { alerts: any[] | null }) {
+  if (!alerts) return <Skeleton className="h-32 w-full" />
+  if (alerts.length === 0) {
+    return (
+      <div className="flex items-center gap-2.5 py-3">
+        <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: 'var(--neon-emerald)' }} />
+        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>No open alerts — all clear</span>
+      </div>
+    )
+  }
+  return (
+    <div className="space-y-1">
+      {alerts.slice(0, 5).map((a: any) => (
+        <Link
+          key={a.id}
+          href="/alerts"
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group"
+          style={{ background: 'var(--bg-secondary)' }}
+        >
+          <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: SEVERITY_DOT[a.severity] || 'var(--text-muted)' }} />
+          <span className="text-sm flex-1 truncate" style={{ color: 'var(--text-primary)' }}>{a.title}</span>
+          <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+            {TRIGGER_SHORT[a.trigger_name] || a.trigger_name}
+          </span>
+          <ArrowUpRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-60 transition-opacity" style={{ color: 'var(--text-muted)' }} />
+        </Link>
+      ))}
+      {alerts.length > 5 && (
+        <Link href="/alerts" className="block text-xs text-center pt-1" style={{ color: 'var(--neon-cyan)' }}>
+          View all {alerts.length} alerts →
+        </Link>
+      )}
     </div>
   )
 }

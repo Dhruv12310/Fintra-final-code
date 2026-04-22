@@ -29,11 +29,10 @@ export function BankAccountsCard({ accounts, totalBalance, loading }: Props) {
 
   const cardStyle: React.CSSProperties = {
     background: 'var(--bg-card)',
-    border: `1px solid ${cardHovered ? 'var(--neon-cyan)' : 'var(--border-color)'}`,
-    borderRadius: 8,
-    transition: 'border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease',
-    boxShadow: cardHovered ? '0 0 20px rgba(0,255,255,0.08)' : 'none',
-    transform: cardHovered ? 'translateY(-1px)' : 'none',
+    border: `1px solid ${cardHovered ? 'var(--border-strong)' : 'var(--border-color)'}`,
+    borderRadius: 10,
+    transition: 'border-color 0.15s ease, box-shadow 0.15s ease',
+    boxShadow: cardHovered ? 'var(--shadow-md)' : 'var(--shadow-xs)',
   }
 
   return (
@@ -41,10 +40,13 @@ export function BankAccountsCard({ accounts, totalBalance, loading }: Props) {
       style={cardStyle}
       onMouseEnter={() => setCardHovered(true)}
       onMouseLeave={() => setCardHovered(false)}
-      className="p-4"
+      className="p-[18px]"
     >
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+      <div className="flex items-center justify-between mb-4">
+        <p
+          className="font-semibold uppercase"
+          style={{ color: 'var(--text-muted)', fontSize: 10.5, letterSpacing: '0.08em' }}
+        >
           Bank Accounts
         </p>
         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>As of today</p>
@@ -81,19 +83,19 @@ export function BankAccountsCard({ accounts, totalBalance, loading }: Props) {
                 onMouseLeave={() => setHovered(null)}
               >
                 <div className="flex items-center gap-2 min-w-0">
-                  <Building2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--neon-cyan)' }} />
+                  <Building2 className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />
                   <span className="text-sm truncate" style={{ color: 'var(--text-primary)' }}>
                     {acct.account_name}
                   </span>
                   {acct.account_code && (
-                    <span className="text-xs flex-shrink-0" style={{ color: 'var(--text-muted)' }}>
+                    <span className="text-xs flex-shrink-0 num" style={{ color: 'var(--text-muted)' }}>
                       {acct.account_code}
                     </span>
                   )}
                 </div>
                 <span
-                  className="text-sm font-semibold tabular-nums flex-shrink-0 ml-2"
-                  style={{ color: acct.balance < 0 ? 'var(--neon-fuchsia)' : 'var(--text-primary)' }}
+                  className="text-sm font-semibold num flex-shrink-0 ml-2"
+                  style={{ color: acct.balance < 0 ? 'var(--negative)' : 'var(--text-primary)' }}
                 >
                   {$(acct.balance)}
                 </span>
@@ -102,13 +104,13 @@ export function BankAccountsCard({ accounts, totalBalance, loading }: Props) {
           </div>
 
           <div
-            className="flex items-center justify-between pt-2 mt-1"
+            className="flex items-center justify-between pt-3 mt-2"
             style={{ borderTop: '1px solid var(--border-color)' }}
           >
-            <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Total</span>
+            <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Total</span>
             <span
-              className="text-sm font-bold tabular-nums"
-              style={{ color: totalBalance < 0 ? 'var(--neon-fuchsia)' : 'var(--neon-cyan)' }}
+              className="text-base font-semibold num-display"
+              style={{ color: totalBalance < 0 ? 'var(--negative)' : 'var(--text-primary)' }}
             >
               {$(totalBalance)}
             </span>
@@ -116,8 +118,8 @@ export function BankAccountsCard({ accounts, totalBalance, loading }: Props) {
 
           <Link
             href="/chart-of-accounts"
-            className="flex items-center gap-1 mt-3 text-xs font-medium transition-opacity hover:opacity-80"
-            style={{ color: 'var(--neon-cyan)' }}
+            className="flex items-center gap-1 mt-4 text-xs font-medium transition-colors hover:opacity-80"
+            style={{ color: 'var(--accent)' }}
           >
             Go to registers <ArrowRight className="w-3 h-3" />
           </Link>

@@ -21,8 +21,8 @@ interface JournalLine {
   accountId: string
   accountName: string
   description: string
-  debit: number
-  credit: number
+  debit: number | ''
+  credit: number | ''
 }
 
 interface JournalEntry {
@@ -593,8 +593,8 @@ export default function NewJournals() {
                       <div key={idx} className="flex justify-between text-sm text-gray-700 dark:text-white/70">
                         <span>{line.accounts?.account_name || line.description}</span>
                         <div className="flex gap-6">
-                          <span className="w-24 text-right">{line.debit ? `$${line.debit.toFixed(2)}` : '—'}</span>
-                          <span className="w-24 text-right">{line.credit ? `$${line.credit.toFixed(2)}` : '—'}</span>
+                          <span className="w-24 text-right">{line.debit ? `$${Number(line.debit).toFixed(2)}` : '—'}</span>
+                          <span className="w-24 text-right">{line.credit ? `$${Number(line.credit).toFixed(2)}` : '—'}</span>
                         </div>
                       </div>
                     ))}

@@ -28,11 +28,15 @@ class InvoiceCreate(BaseModel):
     due_date: Optional[str] = None
     memo: Optional[str] = None
     lines: List[InvoiceLineCreate]
+    tax_rate_id: Optional[str] = None   # UUID of a tax_rates row
+    tax_rate: Optional[float] = None    # Override rate (0-1), e.g. 0.0875
 
 
 class InvoiceUpdate(BaseModel):
     status: Optional[str] = None  # draft|sent|posted|paid|void
     memo: Optional[str] = None
+    tax_rate_id: Optional[str] = None
+    tax_rate: Optional[float] = None
 
 
 @router.get("/")
@@ -90,6 +94,17 @@ async def create_invoice(
     for line in body.lines:
         amt = line.amount if line.amount is not None else (line.quantity * line.unit_price)
         subtotal += amt
+
+    # Resolve tax rate
+    tax_rate = body.tax_rate or 0.0
+    tax_rate_id = body.tax_rate_id
+    if tax_rate_id and not tax_rate:
+        tr = supabase.table("tax_rates").select("rate").eq("id", tax_rate_id).eq("company_id", cid).single().execute()
+        if tr.data:
+            tax_rate = float(tr.data["rate"])
+    tax_total = round(subtotal * tax_rate, 2)
+    total = round(subtotal + tax_total, 2)
+
     inv_data = {
         "company_id": cid,
         "customer_id": body.customer_id,
@@ -98,10 +113,12 @@ async def create_invoice(
         "due_date": body.due_date or body.invoice_date,
         "memo": body.memo,
         "subtotal": subtotal,
-        "tax_total": 0,
-        "total": subtotal,
+        "tax_rate_id": tax_rate_id,
+        "tax_rate": tax_rate,
+        "tax_total": tax_total,
+        "total": total,
         "amount_paid": 0,
-        "balance_due": subtotal,
+        "balance_due": total,
         "status": "draft",
     }
     inv_r = supabase.table("invoices").insert(inv_data).execute()

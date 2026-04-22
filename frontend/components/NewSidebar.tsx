@@ -9,9 +9,8 @@ import {
   Sparkles,
   User,
   Building2,
-  Menu,
-  PanelRight,
-  Globe,
+  ChevronLeft,
+  ChevronRight,
   Landmark,
   FileText,
   Receipt,
@@ -20,40 +19,65 @@ import {
   Users,
   CreditCard,
   Shield,
+  Sun,
+  Moon,
+  Plug,
+  FileImage,
+  Bell,
+  HardHat,
 } from 'lucide-react'
 import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useAuth } from '@/contexts/AuthContext'
-import { useTheme } from '@/contexts/ThemeContext'
 
 interface SidebarProps {
   collapsed: boolean
   onToggle: () => void
+  isDark?: boolean
+  onToggleTheme?: () => void
+  onNavClick?: () => void
 }
 
 const navigation = [
-  { name: 'Dashboard', href: '/new-dashboard', icon: LayoutDashboard },
-  { name: 'Banking', href: '/banking', icon: Landmark },
-  { name: 'Invoices', href: '/invoices', icon: FileText },
-  { name: 'Bills', href: '/bills', icon: Receipt },
-  { name: 'Payments', href: '/payments', icon: CreditCard },
-  { name: 'Contacts', href: '/contacts', icon: Users },
-  { name: 'Journals', href: '/new-journals', icon: BookOpen },
-  { name: 'Chart of Accounts', href: '/chart-of-accounts', icon: FolderTree },
-  { name: 'Reports', href: '/reports', icon: BarChart3 },
-  { name: 'Month-end', href: '/month-end', icon: CalendarCheck },
-  { name: 'Ask AI', href: '/ai', icon: Sparkles },
+  { name: 'Dashboard',         href: '/new-dashboard',      icon: LayoutDashboard },
+  { name: 'Banking',           href: '/banking',             icon: Landmark },
+  { name: 'Invoices',          href: '/invoices',            icon: FileText },
+  { name: 'Bills',             href: '/bills',               icon: Receipt },
+  { name: 'Payments',          href: '/payments',            icon: CreditCard },
+  { name: 'Contacts',          href: '/contacts',            icon: Users },
+  { name: 'Journals',          href: '/new-journals',        icon: BookOpen },
+  { name: 'Chart of Accounts', href: '/chart-of-accounts',   icon: FolderTree },
+  { name: 'Reports',           href: '/reports',             icon: BarChart3 },
+  { name: 'Month-end',         href: '/month-end',           icon: CalendarCheck },
+  { name: 'Alerts',            href: '/alerts',              icon: Bell },
+  { name: 'Projects',          href: '/projects',            icon: HardHat },
+  { name: 'Documents',         href: '/documents',           icon: FileImage },
+  { name: 'Integrations',      href: '/integrations',        icon: Plug },
+  { name: 'Ask AI',            href: '/ai',                  icon: Sparkles },
+  { name: 'Profile',           href: '/profile',             icon: User },
+]
+
+const employeeNavigation = [
   { name: 'Profile', href: '/profile', icon: User },
 ]
 
-export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
+const ROLE_LABELS: Record<string, string> = {
+  owner:      'Owner',
+  admin:      'Admin',
+  accountant: 'Accountant',
+  user:       'Member',
+  viewer:     'Viewer',
+  employee:   'Employee',
+}
+
+export default function NewSidebar({ collapsed, onToggle, isDark, onToggleTheme, onNavClick }: SidebarProps) {
   const pathname = usePathname()
   const { user, company, loading: authLoading } = useAuth()
-  const { theme } = useTheme()
-  const isDark = theme === 'dark'
   const role = (user?.role || '').toLowerCase()
 
   const filteredNavigation = useMemo(() => {
+    if (role === 'employee') return employeeNavigation
+
     const base = navigation.filter((item) => {
       if ((item.href === '/ai' || item.href === '/reports') && ['user', 'viewer'].includes(role)) {
         return false
@@ -61,7 +85,7 @@ export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
       return true
     })
     if (['owner', 'admin'].includes(role)) {
-      return [...base, { name: 'Admin', href: '/admin', icon: Shield }]
+      return [...base, { name: 'Admin', href: '/admin', icon: Shield, isAdmin: true } as any]
     }
     return base
   }, [role])
@@ -72,172 +96,207 @@ export default function NewSidebar({ collapsed, onToggle }: SidebarProps) {
       source
         .split(' ')
         .filter(Boolean)
-        .map(word => word[0]?.toUpperCase())
+        .map((word: string) => word[0]?.toUpperCase())
         .slice(0, 2)
-        .join('') || 'EN'
+        .join('') || 'FN'
     )
   }, [user?.full_name, company?.name])
+
+  const roleLabel = ROLE_LABELS[role] || role
 
   return (
     <motion.aside
       initial={false}
-      animate={{ width: collapsed ? 96 : 280 }}
-      transition={{ type: 'spring', stiffness: 200, damping: 26 }}
-      className="fixed left-0 top-0 z-40 flex h-screen flex-col transition-colors duration-300"
+      animate={{ width: collapsed ? 64 : 240 }}
+      transition={{ type: 'spring', stiffness: 280, damping: 30 }}
+      className="fixed left-0 top-0 z-40 flex h-screen flex-col print:hidden"
       style={{
-        backgroundColor: 'var(--bg-secondary)',
-        borderRight: '1px solid var(--border-color)',
-        color: 'var(--text-primary)',
-        boxShadow: isDark
-          ? '0 20px 120px rgba(15,23,42,0.7)'
-          : '0 20px 60px rgba(0,0,0,0.08)'
+        backgroundColor: 'var(--sidebar-bg, var(--bg-secondary))',
+        borderRight: '1px solid var(--sidebar-border, var(--border-color))',
       }}
     >
-      <div className="relative flex h-20 items-center justify-between px-4">
-        <div
-          className="absolute inset-0 blur-3xl"
-          style={{
-            background: 'linear-gradient(to right, var(--neon-fuchsia), var(--neon-cyan), transparent)',
-            opacity: 'var(--glow-opacity)'
-          }}
-        />
-        <div className="relative flex items-center gap-3">
+      {/* Header / Logo */}
+      <div className="flex h-[52px] items-center justify-between px-3 flex-shrink-0"
+        style={{ borderBottom: '1px solid var(--border-color)' }}
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
           <div
-            className="flex h-11 w-11 items-center justify-center rounded-2xl"
-            style={{
-              border: '1px solid var(--border-color)',
-              backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-              boxShadow: '0 10px 40px rgba(217,70,239,0.3)'
-            }}
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg"
+            style={{ backgroundColor: 'var(--accent)', boxShadow: '0 1px 4px rgba(37,99,235,0.35)' }}
           >
-            <Building2 className="h-5 w-5" style={{ color: 'var(--neon-fuchsia)' }} />
+            <Building2 className="h-4 w-4 text-white" />
           </div>
-          <AnimatePresence>
+
+          <AnimatePresence initial={false}>
             {!collapsed && (
               <motion.div
-                initial={{ opacity: 0, x: -8 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -8 }}
-                className="leading-tight"
+                initial={{ opacity: 0, width: 0 }}
+                animate={{ opacity: 1, width: 'auto' }}
+                exit={{ opacity: 0, width: 0 }}
+                transition={{ duration: 0.15 }}
+                className="overflow-hidden"
               >
-                <p className="text-[11px] uppercase tracking-[0.5em]" style={{ color: 'var(--text-muted)' }}>
+                <span
+                  className="text-sm font-semibold tracking-tight whitespace-nowrap"
+                  style={{ color: 'var(--text-primary)', letterSpacing: '-0.02em' }}
+                >
                   Fintra
-                </p>
-                <p className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Finance OS
-                </p>
+                </span>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
+
         <button
           onClick={onToggle}
-          className="relative flex h-10 w-10 items-center justify-center rounded-2xl transition"
-          style={{
-            border: '1px solid var(--border-color)',
-            backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-            color: 'var(--text-muted)'
-          }}
           aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          className="flex-shrink-0 flex h-6 w-6 items-center justify-center rounded-md transition-colors"
+          style={{
+            color: 'var(--text-muted)',
+            backgroundColor: 'transparent',
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-hover)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
+          onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
         >
-          {collapsed ? <Menu className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
+          {collapsed
+            ? <ChevronRight className="h-3.5 w-3.5" />
+            : <ChevronLeft className="h-3.5 w-3.5" />
+          }
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 px-3 py-6 overflow-y-auto scrollbar-thin" style={{ scrollbarWidth: 'thin', scrollbarColor: 'var(--border-color) transparent' }}>
-        {filteredNavigation.map(item => {
-          const isActive = pathname === item.href
+      {/* Navigation */}
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-3 space-y-0.5">
+        {filteredNavigation.map((item) => {
+          const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+          const isAdminItem = 'isAdmin' in item && item.isAdmin
+
           return (
-            <Link
-              key={item.name}
-              href={item.href}
-              className={`group relative flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all ${
-                collapsed ? 'justify-center' : ''
-              }`}
-              style={{
-                color: isActive ? 'var(--text-primary)' : 'var(--text-muted)'
-              }}
-            >
-              <span
-                className="flex h-10 w-10 items-center justify-center rounded-xl transition-all"
-                style={{
-                  border: isActive
-                    ? '1px solid rgba(217,70,239,0.6)'
-                    : '1px solid var(--border-color)',
-                  background: isActive
-                    ? 'linear-gradient(135deg, rgba(217,70,239,0.4), rgba(34,211,238,0.4))'
-                    : isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)',
-                  color: isActive ? 'var(--text-primary)' : 'var(--text-muted)'
-                }}
-              >
-                <item.icon className="h-4 w-4" />
-              </span>
-              <AnimatePresence>
-                {!collapsed && (
-                  <motion.span
-                    initial={{ opacity: 0, x: -6 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -6 }}
-                    className="flex-1"
-                  >
-                    {item.name}
-                  </motion.span>
-                )}
-              </AnimatePresence>
-              {isActive && !collapsed && (
-                <span
-                  className="h-1.5 w-1.5 rounded-full"
-                  style={{
-                    backgroundColor: 'var(--neon-fuchsia)',
-                    boxShadow: '0 0 12px var(--neon-fuchsia)'
-                  }}
+            <div key={item.name}>
+              {isAdminItem && (
+                <div
+                  className="my-2 mx-1"
+                  style={{ height: 1, backgroundColor: 'var(--border-color)' }}
                 />
               )}
-            </Link>
+
+              <Link
+                href={item.href}
+                title={collapsed ? item.name : undefined}
+                onClick={onNavClick}
+                className={`
+                  group relative flex items-center gap-2.5 rounded-md px-2 py-1.5
+                  text-sm font-medium transition-colors duration-100
+                  ${isActive ? 'nav-item-active' : 'nav-item'}
+                  ${collapsed ? 'justify-center' : ''}
+                `}
+              >
+                <item.icon
+                  className={`flex-shrink-0 h-4 w-4 transition-colors ${
+                    isActive ? '' : 'group-hover:opacity-100'
+                  }`}
+                  style={{
+                    color: isActive ? 'var(--accent)' : 'var(--text-muted)',
+                  }}
+                />
+
+                <AnimatePresence initial={false}>
+                  {!collapsed && (
+                    <motion.span
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.12 }}
+                      className="truncate"
+                      style={{ color: isActive ? 'var(--accent)' : undefined }}
+                    >
+                      {item.name}
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </Link>
+            </div>
           )
         })}
       </nav>
 
-      <div className="px-3 pb-6">
-        <div
-          className="rounded-3xl p-4"
-          style={{
-            border: '1px solid var(--border-color)',
-            backgroundColor: isDark ? 'rgba(15,23,42,0.5)' : 'rgba(0,0,0,0.02)'
-          }}
-        >
-          <div className="flex items-center gap-3">
-            <div
-              className="flex h-11 w-11 items-center justify-center rounded-2xl text-sm font-semibold text-white"
-              style={{
-                background: 'linear-gradient(135deg, var(--neon-fuchsia), var(--neon-indigo))'
-              }}
-            >
-              {initials}
-            </div>
-            <AnimatePresence>
+      {/* Theme toggle + user card at bottom */}
+      <div
+        className="px-2 pb-3 flex-shrink-0 space-y-1.5"
+        style={{ borderTop: '1px solid var(--border-color)', paddingTop: 10 }}
+      >
+        {onToggleTheme && (
+          <button
+            onClick={onToggleTheme}
+            title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+            aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+            className={`flex items-center gap-2.5 rounded-md w-full px-2 py-1.5 transition-colors ${collapsed ? 'justify-center' : ''}`}
+            style={{ color: 'var(--text-muted)' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'var(--bg-muted)'; (e.currentTarget as HTMLElement).style.color = 'var(--text-primary)' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.backgroundColor = 'transparent'; (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)' }}
+          >
+            {isDark
+              ? <Sun className="flex-shrink-0 h-4 w-4" />
+              : <Moon className="flex-shrink-0 h-4 w-4" />}
+            <AnimatePresence initial={false}>
               {!collapsed && (
-                <motion.div
-                  initial={{ opacity: 0, x: -6 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -6 }}
-                  className="min-w-0"
+                <motion.span
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.12 }}
+                  className="text-sm font-medium"
                 >
-                  <p className="truncate text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {authLoading ? 'Loading...' : (company?.name || (user ? 'Complete setup' : 'Demo Company'))}
-                  </p>
-                  <p className="truncate text-xs" style={{ color: 'var(--text-muted)' }}>
-                    {authLoading ? '...' : (user?.email || 'demo@endless.finance')}
-                  </p>
-                </motion.div>
+                  {isDark ? 'Light mode' : 'Dark mode'}
+                </motion.span>
               )}
             </AnimatePresence>
+          </button>
+        )}
+
+        <div
+          className={`flex items-center gap-2.5 rounded-lg px-2 py-2 transition-colors cursor-default ${collapsed ? 'justify-center' : ''}`}
+          style={{ backgroundColor: 'var(--bg-muted)' }}
+        >
+          <div
+            className="flex-shrink-0 flex h-7 w-7 items-center justify-center rounded-md text-xs font-semibold text-white"
+            style={{ backgroundColor: 'var(--accent)', fontSize: 11 }}
+          >
+            {initials}
           </div>
-          {!collapsed && (
-            <p className="mt-3 text-xs" style={{ color: 'var(--text-muted)' }}>
-              Realtime ledgers synced to Fintra Copilot.
-            </p>
-          )}
+
+          <AnimatePresence initial={false}>
+            {!collapsed && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.12 }}
+                className="flex-1 min-w-0"
+              >
+                <p
+                  className="text-xs font-medium truncate"
+                  style={{ color: 'var(--text-primary)', letterSpacing: '-0.01em' }}
+                >
+                  {authLoading ? '...' : (company?.name || (user ? 'Set up company' : 'Demo'))}
+                </p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <p
+                    className="text-xs truncate"
+                    style={{ color: 'var(--text-muted)', fontSize: 11 }}
+                  >
+                    {authLoading ? '...' : (user?.email || 'demo@fintra.app')}
+                  </p>
+                  {roleLabel && (
+                    <span className="badge badge-neutral flex-shrink-0" style={{ fontSize: 10, height: 16, padding: '0 5px' }}>
+                      {roleLabel}
+                    </span>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </motion.aside>

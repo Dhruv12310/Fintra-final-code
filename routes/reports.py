@@ -376,3 +376,129 @@ async def cash_flow(
             "ending_cash": ending_cash,
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# 5. AR Aging Report
+# ---------------------------------------------------------------------------
+
+def _aging_buckets(rows: list, date_col: str, balance_col: str, contact_col: str = "contacts"):
+    """Compute aging buckets for a list of invoices/bills."""
+    today = date.today()
+    buckets = {"1_30": [], "31_60": [], "61_90": [], "over_90": [], "current": []}
+
+    for r in rows:
+        balance = float(r.get(balance_col) or 0)
+        if balance <= 0:
+            continue
+        due_date_str = r.get(date_col)
+        if not due_date_str:
+            continue
+        due_date = date.fromisoformat(due_date_str)
+        days_overdue = (today - due_date).days
+        contact = (r.get(contact_col) or {})
+        entry = {
+            "id": r["id"],
+            "number": r.get("invoice_number") or r.get("bill_number", ""),
+            "contact_name": contact.get("display_name", "Unknown"),
+            "contact_email": contact.get("email"),
+            "due_date": due_date_str,
+            "days_overdue": days_overdue,
+            "balance_due": balance,
+        }
+        if days_overdue <= 0:
+            buckets["current"].append(entry)
+        elif days_overdue <= 30:
+            buckets["1_30"].append(entry)
+        elif days_overdue <= 60:
+            buckets["31_60"].append(entry)
+        elif days_overdue <= 90:
+            buckets["61_90"].append(entry)
+        else:
+            buckets["over_90"].append(entry)
+
+    return buckets
+
+
+@router.get("/ar-aging")
+async def ar_aging(
+    as_of_date: Optional[str] = None,
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
+):
+    """AR Aging: outstanding invoices bucketed by days overdue (0–30, 31–60, 61–90, 90+)."""
+    cid = auth["company_id"]
+
+    rows = supabase.table("invoices")\
+        .select("id, invoice_number, due_date, balance_due, contacts(display_name, email)")\
+        .eq("company_id", cid)\
+        .in_("status", ["posted", "sent"])\
+        .gt("balance_due", 0)\
+        .order("due_date")\
+        .execute().data or []
+
+    buckets = _aging_buckets(rows, "due_date", "balance_due")
+
+    def bucket_summary(items):
+        return {
+            "count": len(items),
+            "total": round(sum(i["balance_due"] for i in items), 2),
+            "items": items,
+        }
+
+    total_ar = round(sum(float(r.get("balance_due") or 0) for r in rows), 2)
+
+    return {
+        "as_of_date": as_of_date or str(date.today()),
+        "total_outstanding": total_ar,
+        "buckets": {
+            "current": bucket_summary(buckets["current"]),
+            "1_30_days": bucket_summary(buckets["1_30"]),
+            "31_60_days": bucket_summary(buckets["31_60"]),
+            "61_90_days": bucket_summary(buckets["61_90"]),
+            "over_90_days": bucket_summary(buckets["over_90"]),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# 6. AP Aging Report
+# ---------------------------------------------------------------------------
+
+@router.get("/ap-aging")
+async def ap_aging(
+    as_of_date: Optional[str] = None,
+    auth: Dict[str, str] = Depends(require_min_role("accountant")),
+):
+    """AP Aging: outstanding bills bucketed by days overdue (0–30, 31–60, 61–90, 90+)."""
+    cid = auth["company_id"]
+
+    rows = supabase.table("bills")\
+        .select("id, bill_number, due_date, balance_due, contacts(display_name, email)")\
+        .eq("company_id", cid)\
+        .in_("status", ["posted", "draft"])\
+        .gt("balance_due", 0)\
+        .order("due_date")\
+        .execute().data or []
+
+    buckets = _aging_buckets(rows, "due_date", "balance_due")
+
+    def bucket_summary(items):
+        return {
+            "count": len(items),
+            "total": round(sum(i["balance_due"] for i in items), 2),
+            "items": items,
+        }
+
+    total_ap = round(sum(float(r.get("balance_due") or 0) for r in rows), 2)
+
+    return {
+        "as_of_date": as_of_date or str(date.today()),
+        "total_outstanding": total_ap,
+        "buckets": {
+            "current": bucket_summary(buckets["current"]),
+            "1_30_days": bucket_summary(buckets["1_30"]),
+            "31_60_days": bucket_summary(buckets["31_60"]),
+            "61_90_days": bucket_summary(buckets["61_90"]),
+            "over_90_days": bucket_summary(buckets["over_90"]),
+        },
+    }

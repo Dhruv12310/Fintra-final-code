@@ -26,6 +26,13 @@ from routes import (
     reports,
     documents,
     admin,
+    integrations,
+    agent,
+    tax_rates,
+    fixed_assets,
+    month_end,
+    alerts,
+    projects,
 )
 
 app = FastAPI(title="AI Financial Companion Backend")
@@ -41,7 +48,8 @@ app.add_middleware(
         "http://127.0.0.1:3001",
         "http://127.0.0.1:3002",
         "https://*.vercel.app",  # Allow all Vercel deployments
-        "https://endless-accounting.vercel.app",  # Your production URL
+        "https://endless-accounting.vercel.app",
+        "https://fintra.vercel.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -74,6 +82,13 @@ app.include_router(reconciliation.router)
 app.include_router(reports.router)
 app.include_router(documents.router)
 app.include_router(admin.router)
+app.include_router(integrations.router)
+app.include_router(agent.router)
+app.include_router(tax_rates.router)
+app.include_router(fixed_assets.router)
+app.include_router(month_end.router)
+app.include_router(alerts.router)
+app.include_router(projects.router)
 
 @app.get("/")
 def read_root():

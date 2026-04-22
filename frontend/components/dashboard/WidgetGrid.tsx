@@ -1,5 +1,5 @@
 'use client'
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useScrollReveal } from '@/hooks/useScrollReveal'
 import {
@@ -19,8 +19,10 @@ import {
   ProfitAndLossWidget,
   SalesWidget,
   AIAnalysisWidget,
+  SentinelAlertsWidget,
   WIDGET_CATALOG,
 } from './widgets'
+import { api } from '@/lib/api'
 
 interface WidgetPref {
   widget_id: string
@@ -51,6 +53,7 @@ const WIDGET_TITLES: Record<string, string> = {
   profit_and_loss: 'Profit & Loss',
   sales: 'Sales',
   ai_analysis: 'AI Analysis',
+  sentinel_alerts: 'Sentinel Alerts',
 }
 
 function WidgetCard({ id, children, showViewAll, viewAllHref }: {
@@ -69,21 +72,32 @@ function WidgetCard({ id, children, showViewAll, viewAllHref }: {
       onMouseLeave={() => setHovered(false)}
       style={{
         background: 'var(--bg-card)',
-        border: `1px solid ${hovered ? 'var(--neon-cyan)' : 'var(--border-color)'}`,
-        borderRadius: 8,
-        padding: 16,
-        transition: 'opacity 0.5s ease, transform 0.5s ease, border-color 0.2s ease, box-shadow 0.2s ease',
+        border: `1px solid ${hovered ? 'var(--border-strong)' : 'var(--border-color)'}`,
+        borderRadius: 10,
+        padding: 18,
+        transition: 'opacity 0.5s ease, transform 0.5s ease, border-color 0.15s ease, box-shadow 0.15s ease',
         opacity: visible ? 1 : 0,
         transform: visible ? 'translateY(0)' : 'translateY(16px)',
-        boxShadow: hovered ? '0 0 20px rgba(0,255,255,0.06)' : 'none',
+        boxShadow: hovered ? 'var(--shadow-md)' : 'var(--shadow-xs)',
       }}
     >
-      <div className="flex items-center justify-between mb-3">
-        <p className="text-xs font-medium uppercase tracking-wider" style={{ color: 'var(--text-secondary)' }}>
+      <div className="flex items-center justify-between mb-4">
+        <p
+          className="font-semibold uppercase"
+          style={{
+            color: 'var(--text-muted)',
+            fontSize: 10.5,
+            letterSpacing: '0.08em',
+          }}
+        >
           {WIDGET_TITLES[id] || id}
         </p>
         {showViewAll && viewAllHref && (
-          <Link href={viewAllHref} className="text-xs font-medium" style={{ color: 'var(--neon-fuchsia)' }}>
+          <Link
+            href={viewAllHref}
+            className="text-xs font-medium transition-colors hover:opacity-80"
+            style={{ color: 'var(--accent)' }}
+          >
             View all →
           </Link>
         )}
@@ -96,6 +110,15 @@ function WidgetCard({ id, children, showViewAll, viewAllHref }: {
 export function WidgetGrid({ prefs, dashboardData, companyId }: Props) {
   const visible = prefs.filter(p => p.is_visible).sort((a, b) => a.position - b.position)
   const wd = dashboardData?.widget_data || {}
+  const [sentinelAlerts, setSentinelAlerts] = useState<any[] | null>(null)
+
+  useEffect(() => {
+    if (visible.some(p => p.widget_id === 'sentinel_alerts')) {
+      api.get('/alerts', { status: 'open', limit: 10 })
+        .then(d => setSentinelAlerts(d || []))
+        .catch(() => setSentinelAlerts([]))
+    }
+  }, [])
 
   if (!dashboardData) return null
 
@@ -121,8 +144,8 @@ export function WidgetGrid({ prefs, dashboardData, companyId }: Props) {
         )
       case 'receivables_aging':
         return (
-          <WidgetCard key={id} id={id}>
-            <ReceivablesAgingWidget aging={dashboardData.aging || {}} />
+          <WidgetCard key={id} id={id} showViewAll viewAllHref="/month-end">
+            <ReceivablesAgingWidget aging={wd.ar_aging ?? dashboardData.aging ?? {}} />
           </WidgetCard>
         )
       case 'action_items':
@@ -139,8 +162,8 @@ export function WidgetGrid({ prefs, dashboardData, companyId }: Props) {
         )
       case 'accounts_payable':
         return (
-          <WidgetCard key={id} id={id}>
-            <AccountsPayableWidget data={wd.accounts_payable ?? null} />
+          <WidgetCard key={id} id={id} showViewAll viewAllHref="/month-end">
+            <AccountsPayableWidget data={wd.ap_aging ?? wd.accounts_payable ?? null} />
           </WidgetCard>
         )
       case 'accounts_receivable':
@@ -195,6 +218,12 @@ export function WidgetGrid({ prefs, dashboardData, companyId }: Props) {
         return (
           <WidgetCard key={id} id={id}>
             <AIAnalysisWidget companyId={companyId} />
+          </WidgetCard>
+        )
+      case 'sentinel_alerts':
+        return (
+          <WidgetCard key={id} id={id} showViewAll viewAllHref="/alerts">
+            <SentinelAlertsWidget alerts={sentinelAlerts} />
           </WidgetCard>
         )
       default:

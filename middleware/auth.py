@@ -18,6 +18,7 @@ ROLE_HIERARCHY = {
     "accountant": 3,
     "user": 2,
     "viewer": 1,
+    "employee": 0,
 }
 
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
@@ -118,16 +119,18 @@ def ensure_user_row_from_token(authorization: Optional[str]) -> bool:
     user_metadata = payload.get("user_metadata") or {}
     full_name = user_metadata.get("full_name") or email or "User"
     try:
-        # Upsert so we don't fail if row already exists (e.g. signup or race)
-        supabase.table("users").upsert(
-            {
-                "id": user_id,
-                "email": email,
-                "full_name": full_name,
-                "role": "admin",
-            },
-            on_conflict="id",
-        ).execute()
+        # Only INSERT if the row doesn't already exist — never overwrite an existing role
+        # (an existing employee/viewer row must not be promoted to admin on next login)
+        existing = supabase.table("users").select("id").eq("id", user_id).limit(1).execute()
+        if not existing.data:
+            supabase.table("users").insert(
+                {
+                    "id": user_id,
+                    "email": email,
+                    "full_name": full_name,
+                    "role": "admin",
+                }
+            ).execute()
         return True
     except Exception:
         return False
@@ -305,6 +308,14 @@ def require_min_role(required_role: str):
     return _dep
 
 
+def require_employee_or_above():
+    """Allow any authenticated company member, including the employee role (level 0)."""
+    async def _dep(auth: Dict[str, str] = Depends(get_current_user_company)):
+        # All roles including employee are allowed; just need a valid company
+        return auth
+    return _dep
+
+
 def require_any_role(*allowed_roles: str):
     """Dependency factory that enforces explicit role allow-list."""
     allowed = {r.lower() for r in allowed_roles}
@@ -319,6 +330,20 @@ def require_any_role(*allowed_roles: str):
         return auth
 
     return _dep
+
+
+def get_employee_record_for_user(user_id: str, company_id: str) -> Optional[Dict]:
+    """
+    Look up the employees row whose user_id matches the authenticated user.
+    Returns the row dict or None. Used by timesheet endpoints to link users → employees.
+    """
+    r = supabase.table("employees")\
+        .select("id, name, company_id")\
+        .eq("user_id", user_id)\
+        .eq("company_id", company_id)\
+        .limit(1)\
+        .execute()
+    return r.data[0] if r.data else None
 
 
 # Optional: For routes that work with or without authentication
