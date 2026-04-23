@@ -1,0 +1,38 @@
+# Web Framework
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+starlette>=0.36.0
+
+# Database
+supabase==2.9.0
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+cryptography>=42.0.0
+
+# HTTP Clients
+httpx==0.27.0
+requests==2.31.0
+
+# AI
+anthropic>=0.30.0
+openai>=1.10.0
+
+# Data Validation
+pydantic>=2.10.0,<3
+email-validator>=2.0.0
+
+# Banking
+plaid-python>=14.0.0
+
+# Document Processing & OCR
+pdfminer.six>=20221105
+pdf2image>=1.17.0
+Pillow>=11.0.0
+easyocr>=1.7.0
+pandas>=2.0.0
+
+# Utilities
+python-dotenv==1.0.0
+python-dateutil==2.8.2

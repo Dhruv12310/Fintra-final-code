@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+
+# Environment variables & secrets (never commit these)
+.env
+.env.local
+.env.secrets
+*.secrets
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+
+# Temporary files
+temp_*
+.cursor/
+
+# Local working folders (never push)
+claude-code/
+amogh-endless/
+bigcapital/
+.claude/
+
+# Scratch / extraction files
+.gl_doc.txt
+
+# Node / Next.js
+node_modules/
+.next/
+frontend/node_modules/
+frontend/.next/
+frontend/tsconfig.tsbuildinfo
+frontend/.turbo/
+
+# Build artifacts
+build/
+dist/
+*.tsbuildinfo
+
+# Editor
+*.code-workspace
+
