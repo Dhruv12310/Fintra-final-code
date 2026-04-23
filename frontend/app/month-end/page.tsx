@@ -317,6 +317,14 @@ export default function MonthEndPage() {
         </div>
       )}
 
+      {/* Module locks + retained earnings rollover */}
+      <PeriodLocksSection
+        companyId={companyId}
+        year={selYear}
+        month={selMonth}
+        onToast={(ok, msg) => showToast(ok, msg)}
+      />
+
       {/* 3-column summary */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* AR summary */}
@@ -626,6 +634,137 @@ export default function MonthEndPage() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+
+// ─── Period locks + retained-earnings rollover ────────────────────────────
+
+function PeriodLocksSection({
+  companyId, year, month, onToast,
+}: {
+  companyId: string | null
+  year: number
+  month: number
+  onToast: (ok: boolean, msg: string) => void
+}) {
+  const [periods, setPeriods] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [busy, setBusy] = useState(false)
+
+  const periodStart = `${year}-${String(month).padStart(2, '0')}-01`
+  const period = periods.find(p => p.period_start === periodStart) || null
+
+  const load = useCallback(async () => {
+    if (!companyId) return
+    setLoading(true)
+    try {
+      const r = await api.get('/accounting-periods/')
+      setPeriods(Array.isArray(r) ? r : [])
+    } catch { /* ignore */ } finally { setLoading(false) }
+  }, [companyId])
+
+  useEffect(() => { load() }, [load, year, month])
+
+  async function ensurePeriod(): Promise<string | null> {
+    if (period?.id) return period.id
+    try {
+      const periodEnd = new Date(year, month, 0).toISOString().split('T')[0]
+      const r = await api.post('/accounting-periods/', {
+        period_start: periodStart, period_end: periodEnd,
+      })
+      const newId = r?.data?.id || r?.id || null
+      await load()
+      return newId
+    } catch (e: any) {
+      onToast(false, e?.response?.data?.detail || 'Failed to create period')
+      return null
+    }
+  }
+
+  async function toggleLock(field: 'sales' | 'purchases' | 'financial', value: boolean) {
+    setBusy(true)
+    try {
+      const id = await ensurePeriod()
+      if (!id) return
+      await api.patch(`/accounting-periods/${id}/lock`, { [field]: value })
+      onToast(true, `${field} ${value ? 'locked' : 'unlocked'} for ${MONTHS[month - 1]} ${year}`)
+      await load()
+    } catch (e: any) {
+      onToast(false, e?.response?.data?.detail || 'Failed to update lock')
+    } finally { setBusy(false) }
+  }
+
+  async function closeFiscalYear() {
+    if (!confirm(`Close fiscal year through ${MONTHS[month - 1]} ${year}? This posts a closing entry to retained earnings and locks all modules for the period.`)) return
+    setBusy(true)
+    try {
+      const id = await ensurePeriod()
+      if (!id) return
+      const r = await api.post(`/accounting-periods/${id}/close-fiscal-year`)
+      onToast(true, `Closed. Net income posted to retained earnings: $${Number(r?.net_income || 0).toFixed(2)}`)
+      await load()
+    } catch (e: any) {
+      onToast(false, e?.response?.data?.detail || 'Failed to close fiscal year')
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="rounded-2xl p-4 space-y-3" style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+          <Lock className="w-4 h-4" /> Period Locks &amp; Year-end
+        </h2>
+        {period?.retained_earnings_entry_id && (
+          <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase"
+            style={{ background: 'var(--positive-soft)', color: 'var(--positive)', letterSpacing: '0.05em' }}>
+            Year closed
+          </span>
+        )}
+      </div>
+      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        Lock individual modules to prevent new posted journals dated inside this period. Closing the fiscal
+        year aggregates revenue and expense activity into retained earnings.
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+        {(['sales', 'purchases', 'financial'] as const).map(field => {
+          const locked = !!period?.[`${field}_locked`]
+          return (
+            <div key={field} className="flex items-center justify-between px-3 py-2 rounded-lg"
+              style={{ background: 'var(--bg-muted)', border: '1px solid var(--border-color)' }}>
+              <span className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{field}</span>
+              <button
+                disabled={busy || loading}
+                onClick={() => toggleLock(field, !locked)}
+                className="text-xs px-2 py-1 rounded inline-flex items-center gap-1"
+                style={{
+                  background: locked ? 'var(--negative-soft)' : 'var(--positive-soft)',
+                  color: locked ? 'var(--negative)' : 'var(--positive)',
+                  border: '1px solid var(--border-color)',
+                }}>
+                {locked ? 'Locked' : 'Open'}
+              </button>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="flex justify-end pt-2">
+        <button
+          onClick={closeFiscalYear}
+          disabled={busy || !!period?.retained_earnings_entry_id}
+          className="text-sm font-medium px-4 py-2 rounded-lg"
+          style={{
+            background: period?.retained_earnings_entry_id ? 'var(--bg-muted)' : 'var(--accent)',
+            color: period?.retained_earnings_entry_id ? 'var(--text-muted)' : '#fff',
+            border: '1px solid var(--border-color)',
+            opacity: busy ? 0.5 : 1,
+          }}>
+          {period?.retained_earnings_entry_id ? 'Year already closed' : 'Close fiscal year through this period'}
+        </button>
+      </div>
     </div>
   )
 }

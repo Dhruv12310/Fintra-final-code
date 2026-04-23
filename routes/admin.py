@@ -159,3 +159,79 @@ def purge_old_activity(
         "deleted_count": deleted,
         "before_date": (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Role permissions (granular RBAC)
+# ---------------------------------------------------------------------------
+
+class RolePermissionBody(BaseModel):
+    role_name: str
+    subject: str
+    action: str
+    allowed: bool = True
+
+
+@router.get("/permissions")
+def list_role_permissions(
+    role_name: Optional[str] = None,
+    auth: Dict[str, str] = Depends(require_any_role("owner", "admin")),
+):
+    """List per-company role permission overrides. Without overrides, the
+    defaults in lib/abilities.py apply."""
+    from lib.abilities import SUBJECTS, ACTIONS, list_default_abilities
+
+    q = table("role_permissions").select("*").eq("company_id", auth["company_id"])
+    if role_name:
+        q = q.eq("role_name", role_name.lower())
+    overrides = q.execute().data or []
+
+    return {
+        "subjects": list(SUBJECTS),
+        "actions": list(ACTIONS),
+        "defaults": {
+            r: list_default_abilities(r)
+            for r in ("owner", "admin", "accountant", "user", "viewer")
+        },
+        "overrides": overrides,
+    }
+
+
+@router.put("/permissions")
+def upsert_role_permission(
+    body: RolePermissionBody,
+    auth: Dict[str, str] = Depends(require_any_role("owner", "admin")),
+):
+    """Set (allow or deny) a (role, subject, action) for this company.
+    Overrides the default ability matrix for everyone with that role."""
+    payload = {
+        "company_id": auth["company_id"],
+        "role_name": body.role_name.lower(),
+        "subject": body.subject,
+        "action": body.action,
+        "allowed": body.allowed,
+        "created_by": auth.get("user_id"),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    r = table("role_permissions").upsert(
+        payload, on_conflict="company_id,role_name,subject,action"
+    ).execute()
+    return r.data[0] if r.data else payload
+
+
+@router.delete("/permissions")
+def remove_role_permission(
+    role_name: str,
+    subject: str,
+    action: str,
+    auth: Dict[str, str] = Depends(require_any_role("owner", "admin")),
+):
+    """Remove an override and fall back to the default ability matrix."""
+    table("role_permissions")\
+        .delete()\
+        .eq("company_id", auth["company_id"])\
+        .eq("role_name", role_name.lower())\
+        .eq("subject", subject)\
+        .eq("action", action)\
+        .execute()
+    return {"ok": True}

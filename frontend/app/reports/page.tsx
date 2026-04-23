@@ -12,12 +12,13 @@ import {
   TrialBalancePDF,
 } from '@/components/ReportPDF'
 import { GeneralLedgerReport } from '@/components/reports/GeneralLedger'
+import { AgingReport } from '@/components/reports/AgingReport'
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
-type Tab = 'balance-sheet' | 'profit-loss' | 'cash-flow' | 'trial-balance' | 'general-ledger'
+type Tab = 'balance-sheet' | 'profit-loss' | 'cash-flow' | 'trial-balance' | 'general-ledger' | 'ar-aging' | 'ap-aging'
 
 interface CategoryData {
   accounts: { account_code: string; account_name: string; net_balance: number }[]
@@ -291,6 +292,8 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'cash-flow', label: 'Cash Flow' },
   { key: 'trial-balance', label: 'Trial Balance' },
   { key: 'general-ledger', label: 'General Ledger' },
+  { key: 'ar-aging', label: 'AR Aging' },
+  { key: 'ap-aging', label: 'AP Aging' },
 ]
 
 const TAB_TITLES: Record<Tab, string> = {
@@ -299,10 +302,12 @@ const TAB_TITLES: Record<Tab, string> = {
   'cash-flow': 'Statement of Cash Flows',
   'trial-balance': 'Trial Balance',
   'general-ledger': 'General Ledger',
+  'ar-aging': 'Accounts Receivable Aging',
+  'ap-aging': 'Accounts Payable Aging',
 }
 
 export default function ReportsPage() {
-  const { company, user } = useAuth()
+  const { company, user, loading: authLoading } = useAuth()
   const canAccessReports = ['owner', 'admin', 'accountant'].includes((user?.role || '').toLowerCase())
   const [activeTab, setActiveTab] = useState<Tab>('balance-sheet')
   const [data, setData] = useState<any>(null)
@@ -331,11 +336,13 @@ export default function ReportsPage() {
     activeTab === 'cash-flow' ||
     activeTab === 'general-ledger'
   const isGL = activeTab === 'general-ledger'
+  const isAging = activeTab === 'ar-aging' || activeTab === 'ap-aging'
+  const isWide = isGL || isAging
 
   const fetchReport = useCallback(async () => {
     if (!company?.id) return
-    if (isGL) {
-      // GL component fetches its own data per selected account.
+    if (isGL || isAging) {
+      // These components fetch their own data.
       setData(null)
       setLoading(false)
       return
@@ -353,19 +360,26 @@ export default function ReportsPage() {
     } finally {
       setLoading(false)
     }
-  }, [company?.id, activeTab, asOfDate, startDate, endDate, needsRange, isGL])
+  }, [company?.id, activeTab, asOfDate, startDate, endDate, needsRange, isGL, isAging])
 
   useEffect(() => {
     fetchReport()
   }, [fetchReport])
 
-  if (!company?.id) {
+  if (!company?.id && !authLoading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] p-8 text-center">
         <BarChart3 className="h-16 w-16 mb-4" style={{ color: 'var(--text-muted)' }} />
         <h2 className="text-xl font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>No company set up</h2>
         <p className="max-w-md mb-6" style={{ color: 'var(--text-secondary)' }}>Finish onboarding to use Reports.</p>
         <a href="/onboarding" className="px-4 py-2 rounded-full text-sm font-semibold text-white" style={{ background: 'linear-gradient(135deg, var(--neon-fuchsia), var(--neon-indigo))' }}>Complete onboarding</a>
+      </div>
+    )
+  }
+  if (!company?.id) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="w-2 h-2 rounded-full animate-pulse" style={{ background: 'var(--accent)' }} />
       </div>
     )
   }
@@ -389,7 +403,7 @@ export default function ReportsPage() {
   return (
     <div
       className={`space-y-6 p-6 mx-auto print:p-0 print:max-w-none print:m-0 ${
-        isGL ? 'max-w-7xl' : 'max-w-4xl'
+        isWide ? 'max-w-7xl' : 'max-w-4xl'
       }`}
     >
       {/* Header — hidden in print */}
@@ -401,7 +415,7 @@ export default function ReportsPage() {
             <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Financial Statements</p>
           </div>
         </div>
-        {data && !loading && !isGL && (
+        {data && !loading && !isGL && !isAging && (
           <PDFDownloadLink
             document={
               activeTab === 'balance-sheet' ? (
@@ -533,6 +547,12 @@ export default function ReportsPage() {
             {activeTab === 'trial-balance' && <TrialBalanceReport data={data} />}
             {activeTab === 'general-ledger' && (
               <GeneralLedgerReport startDate={startDate} endDate={endDate} />
+            )}
+            {activeTab === 'ar-aging' && (
+              <AgingReport mode="ar" asOfDate={asOfDate} />
+            )}
+            {activeTab === 'ap-aging' && (
+              <AgingReport mode="ap" asOfDate={asOfDate} />
             )}
           </>
         )}

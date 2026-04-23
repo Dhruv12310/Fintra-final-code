@@ -332,6 +332,25 @@ def require_any_role(*allowed_roles: str):
     return _dep
 
 
+def require_ability(subject: str, action: str):
+    """Dependency factory that enforces a (subject, action) ability grant.
+    Consults the role_permissions table for per-company overrides before
+    falling back to the default matrix in lib/abilities.py."""
+    from lib.abilities import check_ability
+
+    async def _dep(auth: Dict[str, str] = Depends(get_current_user_company)):
+        user_role = (auth.get("role") or "user").lower()
+        company_id = auth.get("company_id")
+        if not check_ability(user_role, subject, action, company_id):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Role '{user_role}' is not permitted to {action} {subject}",
+            )
+        return auth
+
+    return _dep
+
+
 def get_employee_record_for_user(user_id: str, company_id: str) -> Optional[Dict]:
     """
     Look up the employees row whose user_id matches the authenticated user.

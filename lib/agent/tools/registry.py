@@ -146,5 +146,11 @@ def _register_defaults():
     except ImportError:
         pass
 
+    try:
+        from lib.agent.tools.fx_rate_tool import register as register_fx
+        register_fx()
+    except ImportError:
+        pass
+
 
 _register_defaults()

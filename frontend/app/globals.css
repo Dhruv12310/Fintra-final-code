@@ -56,63 +56,64 @@ html, body {
 }
 
 /* ─────────────────────────────────────────────
-   LIGHT MODE — Supabase-inspired
-   Warm off-white canvas, crisp #e2e8f0 borders,
-   #0f172a text, layered card surfaces
+   LIGHT MODE — Sage canvas, white cards
+   Subtle green-tinted canvas (#eef2ec range) keeps the editorial feel.
+   Cards stay white so financial content has max contrast and our
+   semantic green (positive numbers) still pops against the page.
 ───────────────────────────────────────────── */
 :root,
 html.light,
 [data-theme="light"] {
   color-scheme: light;
 
-  /* Surfaces — layered like Supabase */
-  --bg-primary:    #f8fafc;   /* warm off-white canvas */
-  --bg-secondary:  #ffffff;   /* sidebar / panels */
-  --bg-tertiary:   #f1f5f9;   /* inset areas, code blocks */
-  --bg-card:       #ffffff;   /* cards always white */
-  --bg-muted:      #f1f5f9;   /* hover bg, muted areas */
-  --bg-hover:      #e9eef4;   /* hover state */
+  /* Surfaces — sage canvas + warm-white panels */
+  --bg-primary:    #eef2ec;   /* sage canvas */
+  --bg-secondary:  #f5f7f3;   /* sidebar / panels — slightly lighter sage */
+  --bg-tertiary:   #e7ece5;   /* inset areas, code blocks */
+  --bg-card:       #ffffff;   /* cards stay white for content contrast */
+  --bg-muted:      #e7ece5;   /* hover bg, muted areas */
+  --bg-hover:      #dde4d9;   /* hover state */
   --bg-input:      #ffffff;   /* inputs */
-  --bg-overlay:    rgba(15,23,42,0.5);
+  --bg-overlay:    rgba(20,30,22,0.5);
 
-  /* Text — dark slate, not pure black */
-  --text-primary:   #0f172a;
-  --text-secondary: #475569;
-  --text-muted:     #94a3b8;
-  --text-disabled:  #cbd5e1;
+  /* Text — dark slate, slightly warmed */
+  --text-primary:   #1a2421;
+  --text-secondary: #4a5752;
+  --text-muted:     #8b9690;
+  --text-disabled:  #c4cdc6;
   --text-inverse:   #ffffff;
 
-  /* Borders — Supabase uses crisp visible borders */
-  --border-color:   #e2e8f0;
-  --border-strong:  #cbd5e1;
+  /* Borders — sage-tinted hairlines */
+  --border-color:   #d8e0d4;
+  --border-strong:  #c4cfbe;
   --border-focus:   #2563eb;
 
-  /* Accent — electric blue (QuickBooks/Copilot energy) */
+  /* Accent — electric blue stays for identity + active states */
   --accent:         #2563eb;
   --accent-hover:   #1d4ed8;
   --accent-subtle:  #eff6ff;
   --accent-text:    #1e40af;
 
-  /* Success green (Supabase-inspired) */
-  --success:        #3ecf8e;
-  --success-subtle: #dcfce7;
+  /* Success green — Supabase-style, pops against sage */
+  --success:        #2ec27e;
+  --success-subtle: #dcf2e3;
 
-  /* Grid dots — crisp and visible in light */
-  --dot-color:      rgba(15,23,42,0.10);
+  /* Grid dots — sage-tinted to stay visible on sage canvas */
+  --dot-color:      rgba(26,36,33,0.10);
   --dot-size:       24px;
 
-  /* Shadows — layered like Supabase */
-  --shadow-xs:  0 1px 2px rgba(15,23,42,0.04);
-  --shadow-sm:  0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04);
-  --shadow-md:  0 4px 6px rgba(15,23,42,0.05), 0 2px 4px rgba(15,23,42,0.06);
-  --shadow-lg:  0 10px 15px rgba(15,23,42,0.05), 0 4px 6px rgba(15,23,42,0.04);
-  --shadow-xl:  0 20px 25px rgba(15,23,42,0.08), 0 8px 10px rgba(15,23,42,0.04);
+  /* Shadows — softened to suit the warmer canvas */
+  --shadow-xs:  0 1px 2px rgba(26,36,33,0.04);
+  --shadow-sm:  0 1px 3px rgba(26,36,33,0.06), 0 1px 2px rgba(26,36,33,0.04);
+  --shadow-md:  0 4px 6px rgba(26,36,33,0.05), 0 2px 4px rgba(26,36,33,0.06);
+  --shadow-lg:  0 10px 15px rgba(26,36,33,0.05), 0 4px 6px rgba(26,36,33,0.04);
+  --shadow-xl:  0 20px 25px rgba(26,36,33,0.08), 0 8px 10px rgba(26,36,33,0.04);
 
   --glow-opacity: 0;
 
   /* Sidebar specifics */
-  --sidebar-bg:     #f8fafc;
-  --sidebar-border: #e2e8f0;
+  --sidebar-bg:     #f5f7f3;
+  --sidebar-border: #d8e0d4;
 }
 
 /* ─────────────────────────────────────────────

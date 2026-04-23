@@ -47,6 +47,19 @@ export default function RootLayout({
         <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png" />
         <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
         <link rel="manifest" href="/manifest.json" />
+        {process.env.NODE_ENV !== 'production' && (
+          <script
+            dangerouslySetInnerHTML={{
+              __html: `
+                if ('serviceWorker' in navigator) {
+                  navigator.serviceWorker.getRegistrations().then(function(rs) {
+                    rs.forEach(function(r) { r.unregister(); });
+                  }).catch(function() {});
+                }
+              `,
+            }}
+          />
+        )}
       </head>
       <body className={dmSans.variable}>
         <ThemeProvider>

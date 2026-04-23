@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Activity, Shield, RefreshCw } from 'lucide-react'
+import { Activity, Shield, RefreshCw, KeyRound, Plus, Trash2 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { api, API_BASE } from '@/lib/api'
 import { supabase } from '@/lib/supabase'
@@ -259,6 +259,180 @@ export default function AdminPanelPage() {
           ))}
         </div>
       </section>
+
+      <PermissionsSection />
     </div>
+  )
+}
+
+
+// ─── Permission overrides ─────────────────────────────────────────────────
+
+interface PermOverride {
+  id: string
+  role_name: string
+  subject: string
+  action: string
+  allowed: boolean
+}
+
+interface PermResponse {
+  subjects: string[]
+  actions: string[]
+  defaults: Record<string, { subject: string; action: string }[]>
+  overrides: PermOverride[]
+}
+
+const PERM_ROLES = ['admin', 'accountant', 'user', 'viewer']
+
+function PermissionsSection() {
+  const [data, setData] = useState<PermResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [err, setErr] = useState<string | null>(null)
+  const [role, setRole] = useState('accountant')
+  const [subject, setSubject] = useState('')
+  const [action, setAction] = useState('')
+  const [allowed, setAllowed] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setErr(null)
+    try {
+      const r = await api.get<PermResponse>('/admin/permissions')
+      setData(r)
+      if (!subject) setSubject(r.subjects[0])
+      if (!action) setAction(r.actions[0])
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || 'Failed to load permissions')
+    } finally {
+      setLoading(false)
+    }
+  }, [subject, action])
+
+  useEffect(() => { load() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function add() {
+    if (!subject || !action) return
+    setSaving(true)
+    try {
+      await api.put('/admin/permissions', { role_name: role, subject, action, allowed })
+      load()
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || 'Failed to save')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function remove(o: PermOverride) {
+    try {
+      await fetch(
+        `${process.env.NEXT_PUBLIC_API_BASE || ''}/admin/permissions?role_name=${o.role_name}&subject=${encodeURIComponent(o.subject)}&action=${encodeURIComponent(o.action)}`,
+        { method: 'DELETE', credentials: 'include' }
+      )
+      load()
+    } catch {
+      load()
+    }
+  }
+
+  return (
+    <section
+      className="rounded-xl p-4 space-y-3"
+      style={{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }}
+    >
+      <h2 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+        <KeyRound className="w-4 h-4" />
+        Permission Overrides
+      </h2>
+      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        Per-role grants or denials on top of the default ability matrix. Overrides apply only to this company.
+      </p>
+
+      {err && (
+        <div className="p-2 rounded text-xs"
+          style={{ color: 'var(--negative)', border: '1px solid var(--border-color)', background: 'var(--negative-soft)' }}>
+          {err}
+        </div>
+      )}
+
+      {!loading && data && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-2 items-end">
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Role</span>
+              <select className="input" value={role} onChange={e => setRole(e.target.value)}>
+                {PERM_ROLES.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Subject</span>
+              <select className="input" value={subject} onChange={e => setSubject(e.target.value)}>
+                {data.subjects.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Action</span>
+              <select className="input" value={action} onChange={e => setAction(e.target.value)}>
+                {data.actions.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>State</span>
+              <select className="input" value={allowed ? 'allow' : 'deny'} onChange={e => setAllowed(e.target.value === 'allow')}>
+                <option value="allow">Allow</option>
+                <option value="deny">Deny</option>
+              </select>
+            </div>
+            <button onClick={add} disabled={saving} className="btn btn-primary h-[34px]">
+              <Plus className="w-4 h-4" /> Save
+            </button>
+          </div>
+
+          <div className="rounded-lg overflow-hidden" style={{ border: '1px solid var(--border-color)' }}>
+            <table className="w-full text-sm">
+              <thead>
+                <tr style={{ background: 'var(--bg-muted)', borderBottom: '1px solid var(--border-color)' }}>
+                  {['Role', 'Subject', 'Action', 'State', ''].map(h => (
+                    <th key={h} className="text-[10px] uppercase font-semibold px-3 py-2 text-left"
+                      style={{ color: 'var(--text-muted)', letterSpacing: '0.06em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.overrides.length === 0 ? (
+                  <tr><td colSpan={5} className="px-3 py-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+                    No overrides. Default tier abilities apply.
+                  </td></tr>
+                ) : (
+                  data.overrides.map(o => (
+                    <tr key={o.id} style={{ borderBottom: '1px solid var(--border-color)' }}>
+                      <td className="px-3 py-2 capitalize" style={{ color: 'var(--text-primary)' }}>{o.role_name}</td>
+                      <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{o.subject}</td>
+                      <td className="px-3 py-2" style={{ color: 'var(--text-primary)' }}>{o.action}</td>
+                      <td className="px-3 py-2">
+                        <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase"
+                          style={{
+                            background: o.allowed ? 'var(--positive-soft)' : 'var(--negative-soft)',
+                            color: o.allowed ? 'var(--positive)' : 'var(--negative)',
+                          }}>
+                          {o.allowed ? 'allow' : 'deny'}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <button onClick={() => remove(o)} title="Remove">
+                          <Trash2 className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </section>
   )
 }

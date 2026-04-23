@@ -33,6 +33,9 @@ from routes import (
     month_end,
     alerts,
     projects,
+    credit_notes,
+    vendor_credits,
+    exchange_rates,
 )
 
 app = FastAPI(title="AI Financial Companion Backend")
@@ -89,6 +92,9 @@ app.include_router(fixed_assets.router)
 app.include_router(month_end.router)
 app.include_router(alerts.router)
 app.include_router(projects.router)
+app.include_router(credit_notes.router)
+app.include_router(vendor_credits.router)
+app.include_router(exchange_rates.router)
 
 @app.get("/")
 def read_root():

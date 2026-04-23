@@ -347,6 +347,7 @@ export default function BankingPage() {
   const [txnLoading, setTxnLoading] = useState(false)
   const [syncingId, setSyncingId] = useState<string | null>(null)
   const [postingTxn, setPostingTxn] = useState<BankTransaction | null>(null)
+  const [matchingTxn, setMatchingTxn] = useState<BankTransaction | null>(null)
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [linkLoading, setLinkLoading] = useState(false)
   const [categorizing, setCategorizing] = useState(false)
@@ -711,6 +712,7 @@ export default function BankingPage() {
                       onCategorize={handleCategorize}
                       onExclude={handleExclude}
                       onPost={() => setPostingTxn(txn)}
+                      onMatch={() => setMatchingTxn(txn)}
                       onAcceptSuggestion={handleAcceptSuggestion}
                       onRejectSuggestion={handleRejectSuggestion}
                     />
@@ -732,6 +734,19 @@ export default function BankingPage() {
           onClose={() => setPostingTxn(null)}
         />
       )}
+
+      {/* ── Match Modal ── */}
+      {matchingTxn && (
+        <MatchModal
+          txn={matchingTxn}
+          onClose={() => setMatchingTxn(null)}
+          onMatched={() => {
+            setMatchingTxn(null)
+            // refresh the list so the txn moves out of pending
+            void loadTransactions()
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -739,7 +754,7 @@ export default function BankingPage() {
 // ── Transaction Row ────────────────────────────────────────────────
 
 function TransactionRow({
-  txn, tab, glAccounts, onCategorize, onExclude, onPost, onAcceptSuggestion, onRejectSuggestion,
+  txn, tab, glAccounts, onCategorize, onExclude, onPost, onMatch, onAcceptSuggestion, onRejectSuggestion,
 }: {
   txn: BankTransaction
   tab: string
@@ -747,6 +762,7 @@ function TransactionRow({
   onCategorize: (id: string, accountId: string) => void
   onExclude: (id: string) => void
   onPost: () => void
+  onMatch?: () => void
   onAcceptSuggestion: (id: string) => void
   onRejectSuggestion: (id: string) => void
 }) {
@@ -843,6 +859,16 @@ function TransactionRow({
       <td className="px-4 py-3">
         {tab === 'pending' && (
           <div className="flex items-center gap-1 justify-end">
+            {onMatch && (
+              <button
+                onClick={onMatch}
+                className="px-2 py-1.5 text-xs font-medium rounded-lg transition-colors"
+                style={{ background: 'var(--bg-muted)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' }}
+                title="Find matching invoice or bill"
+              >
+                Match
+              </button>
+            )}
             <button
               onClick={onPost}
               className="px-3 py-1.5 text-xs font-semibold rounded-lg transition-all"
@@ -870,5 +896,123 @@ function TransactionRow({
         )}
       </td>
     </tr>
+  )
+}
+
+
+// ── Match Modal ────────────────────────────────────────────────────
+
+interface MatchCandidate {
+  kind: 'invoice' | 'bill' | 'payment' | 'bill_payment'
+  id: string
+  label: string
+  contact?: string | null
+  amount: number
+  date: string
+  score: number
+}
+
+function MatchModal({
+  txn, onClose, onMatched,
+}: {
+  txn: BankTransaction
+  onClose: () => void
+  onMatched: () => void
+}) {
+  const [loading, setLoading] = useState(true)
+  const [candidates, setCandidates] = useState<MatchCandidate[]>([])
+  const [confirming, setConfirming] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const r = await api.get(`/banking/transactions/${txn.id}/match-candidates?days_window=7`)
+        if (alive) setCandidates(r?.candidates || [])
+      } catch (e: any) {
+        if (alive) setErr(e?.response?.data?.detail || 'Failed to load matches')
+      } finally {
+        if (alive) setLoading(false)
+      }
+    })()
+    return () => { alive = false }
+  }, [txn.id])
+
+  async function confirm(c: MatchCandidate) {
+    setConfirming(c.id)
+    setErr(null)
+    try {
+      await api.post(`/banking/transactions/${txn.id}/match`, {
+        kind: c.kind, target_id: c.id,
+      })
+      onMatched()
+    } catch (e: any) {
+      setErr(e?.response?.data?.detail || 'Match failed')
+    } finally { setConfirming(null) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
+      <div className="w-full max-w-2xl rounded-xl p-5 space-y-4 max-h-[80vh] overflow-auto"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)' }}>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Match transaction</h2>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              {txn.name} {' \u00B7 '} ${Math.abs(Number(txn.amount)).toFixed(2)} {' \u00B7 '} {txn.posted_date}
+            </p>
+          </div>
+          <button onClick={onClose}><X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} /></button>
+        </div>
+
+        {err && (
+          <div className="p-2 rounded text-xs"
+            style={{ color: 'var(--negative)', background: 'var(--negative-soft)', border: '1px solid var(--border-color)' }}>
+            {err}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="py-12 text-center"><Loader2 className="w-5 h-5 animate-spin inline" style={{ color: 'var(--text-muted)' }} /></div>
+        ) : candidates.length === 0 ? (
+          <div className="py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
+            No matching invoices, bills, or payments within 7 days. Post manually instead.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {candidates.map(c => (
+              <div key={`${c.kind}-${c.id}`}
+                className="flex items-center justify-between p-3 rounded-lg"
+                style={{ background: 'var(--bg-muted)', border: '1px solid var(--border-color)' }}>
+                <div className="flex flex-col gap-0.5">
+                  <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{c.label}</span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                    {c.contact || ''} {c.contact ? ' \u00B7 ' : ''} {c.date} {' \u00B7 '} ${c.amount.toFixed(2)}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+                    style={{
+                      background: c.score > 0.85 ? 'var(--positive-soft)' : 'var(--bg-card)',
+                      color: c.score > 0.85 ? 'var(--positive)' : 'var(--text-muted)',
+                      border: '1px solid var(--border-color)',
+                    }}>
+                    {Math.round(c.score * 100)}%
+                  </span>
+                  <button
+                    onClick={() => confirm(c)}
+                    disabled={confirming === c.id}
+                    className="text-xs font-medium px-3 py-1.5 rounded inline-flex items-center gap-1"
+                    style={{ background: 'var(--accent)', color: '#fff' }}>
+                    {confirming === c.id ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Match'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   )
 }

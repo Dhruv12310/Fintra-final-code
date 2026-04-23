@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from typing import Optional, Dict, List
 from datetime import date, datetime
 from database import supabase
-from middleware.auth import get_current_user_company
+from middleware.auth import get_current_user_company, require_min_role
 from lib.crypto import encrypt_token, decrypt_token
 import os
 
@@ -776,3 +776,189 @@ def get_gl_accounts(auth: Dict[str, str] = Depends(get_current_user_company)):
         "id, account_code, account_name, account_type, account_subtype"
     ).eq("company_id", cid).order("account_code").execute().data or []
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Reconciliation matching: pair bank transactions with invoices, bills,
+# payments, or bill payments. Score by (amount match, date proximity).
+# ---------------------------------------------------------------------------
+
+from datetime import date as _date, timedelta
+
+def _abs_date_days(a: str, b: str) -> int:
+    da = _date.fromisoformat(a[:10])
+    db = _date.fromisoformat(b[:10])
+    return abs((da - db).days)
+
+
+def _score_candidate(txn_amount: float, txn_date: str, cand_amount: float, cand_date: str, days_window: int) -> float:
+    amt_diff = abs(abs(txn_amount) - abs(cand_amount))
+    if amt_diff > 0.01:
+        return 0.0
+    days_off = _abs_date_days(txn_date, cand_date)
+    if days_off > days_window:
+        return 0.0
+    # 1.0 for same day, decaying linearly to ~0.5 at days_window.
+    return round(1.0 - (days_off / (2 * max(1, days_window))), 4)
+
+
+@router.get("/transactions/{txn_id}/match-candidates")
+def match_candidates(
+    txn_id: str,
+    days_window: int = 5,
+    auth: Dict[str, str] = Depends(get_current_user_company),
+):
+    """Suggest invoices, bills, payments, or bill payments that could match
+    this bank transaction. Ranked by score (1.0 = same day exact amount)."""
+    cid = auth["company_id"]
+    txn = supabase.table("bank_transactions").select("*")\
+        .eq("id", txn_id).eq("company_id", cid).single().execute().data
+    if not txn:
+        raise HTTPException(status_code=404, detail="Bank transaction not found")
+
+    txn_amount = float(txn["amount"])
+    txn_date = txn["posted_date"]
+    start = (_date.fromisoformat(txn_date) - timedelta(days=days_window)).isoformat()
+    end = (_date.fromisoformat(txn_date) + timedelta(days=days_window)).isoformat()
+
+    candidates: list = []
+
+    # Open invoices (positive bank amount = customer paying us)
+    if txn_amount >= 0:
+        invs = supabase.table("invoices")\
+            .select("id, invoice_number, invoice_date, total, balance_due, contacts(display_name)")\
+            .eq("company_id", cid).in_("status", ["sent", "posted"])\
+            .gte("invoice_date", start).lte("invoice_date", end)\
+            .execute().data or []
+        for i in invs:
+            score = _score_candidate(txn_amount, txn_date, float(i["balance_due"] or 0), i["invoice_date"], days_window)
+            if score > 0:
+                candidates.append({
+                    "kind": "invoice", "id": i["id"],
+                    "label": f"Invoice {i.get('invoice_number')}",
+                    "contact": (i.get("contacts") or {}).get("display_name"),
+                    "amount": float(i.get("balance_due") or 0),
+                    "date": i.get("invoice_date"),
+                    "score": score,
+                })
+
+        pays = supabase.table("payments")\
+            .select("id, payment_number, payment_date, amount, contacts:customer_id(display_name)")\
+            .eq("company_id", cid)\
+            .gte("payment_date", start).lte("payment_date", end)\
+            .execute().data or []
+        for p in pays:
+            score = _score_candidate(txn_amount, txn_date, float(p["amount"] or 0), p["payment_date"], days_window)
+            if score > 0:
+                candidates.append({
+                    "kind": "payment", "id": p["id"],
+                    "label": f"Payment {p.get('payment_number') or p['id'][:8]}",
+                    "contact": (p.get("contacts") or {}).get("display_name"),
+                    "amount": float(p.get("amount") or 0),
+                    "date": p.get("payment_date"),
+                    "score": score,
+                })
+
+    # Open bills (negative bank amount = us paying vendor)
+    if txn_amount <= 0:
+        bills = supabase.table("bills")\
+            .select("id, bill_number, bill_date, total, balance_due, contacts(display_name)")\
+            .eq("company_id", cid).in_("status", ["posted"])\
+            .gte("bill_date", start).lte("bill_date", end)\
+            .execute().data or []
+        for b in bills:
+            score = _score_candidate(txn_amount, txn_date, float(b["balance_due"] or 0), b["bill_date"], days_window)
+            if score > 0:
+                candidates.append({
+                    "kind": "bill", "id": b["id"],
+                    "label": f"Bill {b.get('bill_number')}",
+                    "contact": (b.get("contacts") or {}).get("display_name"),
+                    "amount": float(b.get("balance_due") or 0),
+                    "date": b.get("bill_date"),
+                    "score": score,
+                })
+
+        bps = supabase.table("bill_payments")\
+            .select("id, payment_number, payment_date, amount, contacts:vendor_id(display_name)")\
+            .eq("company_id", cid)\
+            .gte("payment_date", start).lte("payment_date", end)\
+            .execute().data or []
+        for p in bps:
+            score = _score_candidate(txn_amount, txn_date, float(p["amount"] or 0), p["payment_date"], days_window)
+            if score > 0:
+                candidates.append({
+                    "kind": "bill_payment", "id": p["id"],
+                    "label": f"Bill payment {p.get('payment_number') or p['id'][:8]}",
+                    "contact": (p.get("contacts") or {}).get("display_name"),
+                    "amount": float(p.get("amount") or 0),
+                    "date": p.get("payment_date"),
+                    "score": score,
+                })
+
+    candidates.sort(key=lambda c: (-c["score"], c["date"]))
+    return {
+        "transaction": {
+            "id": txn["id"],
+            "amount": txn_amount,
+            "date": txn_date,
+            "name": txn.get("name"),
+            "status": txn.get("status"),
+        },
+        "candidates": candidates[:25],
+    }
+
+
+class ConfirmMatchBody(BaseModel):
+    kind: str        # invoice | bill | payment | bill_payment
+    target_id: str   # the matched document's id
+
+
+@router.post("/transactions/{txn_id}/match")
+def confirm_match(
+    txn_id: str,
+    body: ConfirmMatchBody,
+    auth: Dict[str, str] = Depends(require_min_role("user")),
+):
+    """Confirm a match between a bank transaction and an existing document.
+    Looks up the document's linked_journal_entry_id and writes it into
+    bank_transaction_matches. Sets the bank_transaction status to matched."""
+    cid = auth["company_id"]
+    txn = supabase.table("bank_transactions").select("*")\
+        .eq("id", txn_id).eq("company_id", cid).single().execute().data
+    if not txn:
+        raise HTTPException(status_code=404, detail="Bank transaction not found")
+
+    table_map = {
+        "invoice":      "invoices",
+        "bill":         "bills",
+        "payment":      "payments",
+        "bill_payment": "bill_payments",
+    }
+    if body.kind not in table_map:
+        raise HTTPException(status_code=400, detail=f"Unknown kind: {body.kind}")
+
+    doc = supabase.table(table_map[body.kind])\
+        .select("id, linked_journal_entry_id")\
+        .eq("id", body.target_id).eq("company_id", cid).single().execute().data
+    if not doc:
+        raise HTTPException(status_code=404, detail=f"{body.kind} not found")
+
+    je_id = doc.get("linked_journal_entry_id")
+    if not je_id:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{body.kind} has no posted journal entry to match against. Post the document first.",
+        )
+
+    supabase.table("bank_transaction_matches").upsert({
+        "company_id": cid,
+        "bank_transaction_id": txn_id,
+        "journal_entry_id": je_id,
+        "matched_by": auth.get("user_id"),
+        "match_type": "matched_existing",
+    }, on_conflict="bank_transaction_id").execute()
+
+    supabase.table("bank_transactions").update({"status": "matched"})\
+        .eq("id", txn_id).eq("company_id", cid).execute()
+
+    return {"ok": True, "journal_entry_id": je_id, "kind": body.kind, "target_id": body.target_id}

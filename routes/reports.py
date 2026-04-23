@@ -428,10 +428,13 @@ async def ar_aging(
     """AR Aging: outstanding invoices bucketed by days overdue (0–30, 31–60, 61–90, 90+)."""
     cid = auth["company_id"]
 
+    # Only POSTED invoices have a corresponding GL entry. 'sent' is a
+    # delivery state with no journal posting; including it would make
+    # AR Aging diverge from the GL AR control account.
     rows = supabase.table("invoices")\
         .select("id, invoice_number, due_date, balance_due, contacts(display_name, email)")\
         .eq("company_id", cid)\
-        .in_("status", ["posted", "sent"])\
+        .eq("status", "posted")\
         .gt("balance_due", 0)\
         .order("due_date")\
         .execute().data or []
@@ -472,10 +475,13 @@ async def ap_aging(
     """AP Aging: outstanding bills bucketed by days overdue (0–30, 31–60, 61–90, 90+)."""
     cid = auth["company_id"]
 
+    # Only POSTED bills have a corresponding GL entry; drafts haven't
+    # touched AP yet and including them inflates the report vs the GL
+    # AP control account.
     rows = supabase.table("bills")\
         .select("id, bill_number, due_date, balance_due, contacts(display_name, email)")\
         .eq("company_id", cid)\
-        .in_("status", ["posted", "draft"])\
+        .eq("status", "posted")\
         .gt("balance_due", 0)\
         .order("due_date")\
         .execute().data or []

@@ -25,6 +25,9 @@ import {
   FileImage,
   Bell,
   HardHat,
+  FileMinus,
+  ReceiptText,
+  Globe,
 } from 'lucide-react'
 import { useMemo } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
@@ -43,6 +46,8 @@ const navigation = [
   { name: 'Banking',           href: '/banking',             icon: Landmark },
   { name: 'Invoices',          href: '/invoices',            icon: FileText },
   { name: 'Bills',             href: '/bills',               icon: Receipt },
+  { name: 'Credit Notes',      href: '/credit-notes',        icon: FileMinus },
+  { name: 'Vendor Credits',    href: '/vendor-credits',      icon: ReceiptText },
   { name: 'Payments',          href: '/payments',            icon: CreditCard },
   { name: 'Contacts',          href: '/contacts',            icon: Users },
   { name: 'Journals',          href: '/new-journals',        icon: BookOpen },
@@ -53,6 +58,7 @@ const navigation = [
   { name: 'Projects',          href: '/projects',            icon: HardHat },
   { name: 'Documents',         href: '/documents',           icon: FileImage },
   { name: 'Integrations',      href: '/integrations',        icon: Plug },
+  { name: 'Exchange Rates',    href: '/exchange-rates',      icon: Globe },
   { name: 'Ask AI',            href: '/ai',                  icon: Sparkles },
   { name: 'Profile',           href: '/profile',             icon: User },
 ]
